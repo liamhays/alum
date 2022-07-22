@@ -130,7 +130,6 @@ fn get_serial_port(cli_port: Option<PathBuf>, cli_baud: Option<u32>) -> Box<dyn 
 fn main() {
     let cli = Cli::parse();
 
-
     // Dispatch operation
     match &cli.command {
 	Commands::Xsend { direct, path } => {
@@ -154,7 +153,7 @@ fn main() {
 	Commands::Xget { direct, path, overwrite } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Xget, path = {:?}, overwrite = {:?}", path, overwrite);
-	    xmodem::get_file_conn4x(path, &mut port, direct);
+	    xmodem::get_file(path, &mut port, direct);
 	    
 	},
 
@@ -170,17 +169,7 @@ fn main() {
 
 	Commands::Info { path } => {
 	    println!("Info mode, path = {:?}", path);
-	    let object_info = hp_object::crc_file(path);
-	    if object_info.is_none() {
-		println!("File is not an HP object");
-	    } else {
-
-		println!("ROM Revision: {}, Object CRC: {:?}, Object Length (nibbles): {:?}",
-			 object_info.as_ref().unwrap().romrev,
-			 object_info.as_ref().unwrap().crc,
-			 object_info.as_ref().unwrap().length);
-	    }
-	    //std::process::exit(0);
+	    hp_object::crc_and_output(path);
 	},
     }
 }

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::fmt;
 
 // TODO: Check lengths of vectors before reading
 fn calc_crc(crc: u32, nibble: u8) -> u32 {
@@ -13,12 +14,21 @@ enum LengthState {
     Fixed,
 }
 
-#[derive(Debug)]
 pub struct ObjectInfo {
     pub romrev: char,
     pub crc: std::string::String,
     pub length: u32,
 }
+
+impl fmt::Display for ObjectInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+	write!(f, "ROM Revision: {}, Object CRC: {}, Object length (bytes): {:?}",
+	       self.romrev,
+	       self.crc,
+	       self.length as f32 / 2.0)
+    }
+}
+
 fn prolog_to_length(prolog: u32) -> Option<LengthState> {
     //        DOBINT  DOREAL  DOEREL  DOCMP   DOECMP  DOCHAR  DOROMP
     for i in [0x2911, 0x2933, 0x2955, 0x2977, 0x299d, 0x29bf, 0x29e2] {
@@ -60,7 +70,7 @@ fn prolog_to_length(prolog: u32) -> Option<LengthState> {
 
 // This does not need to have Option because prolog_to_length already checks for all these prologs.
 fn prolog_to_fixed_length(prolog: u32) -> Option<u32> {
-    println!("prolog to fixed length");
+    //println!("prolog to fixed length");
     // We subtract the length of the prolog from these because it's
     // added in later.
     match prolog {
@@ -89,13 +99,11 @@ fn read_size(nibs: &Vec<u8>) -> Option<u32> {
     if nibs.len() < 10 {
 	return None;
     }
-    println!("read size");
     let mut length = 0u32;
     for i in (5..10).rev() {
 	length <<= 4;
 	length |= nibs[i] as u32;
     }
-    println!("length is {:?}", length);
     // Must include prolog nibbles in this checksum
     return Some(length + 5u32);
 }
@@ -136,12 +144,12 @@ fn calc_object_size(nibs: &Vec<u8>) -> Option<u32> {
 }
 
 fn read_ascic_size(nibs: &Vec<u8>) -> Option<u32> {
-    println!("read ascic size");
+    //println!("read ascic size");
     // ASCIC size is encoded as a byte (so up to 255 characters). We
     // then need to go get more size, by reading the object that
     // follows the ASCIC data.
-    let ascic_len = (nibs[1] << 4) + nibs[0];
-    let ascic_region_len = 2 + ascic_len * 2; // nibbles
+    let ascic_char_len = (nibs[1] << 4) + nibs[0];
+    let ascic_region_len = 2 + ascic_char_len * 2; // nibbles
 
     // slice then reconvert to Vec
     let inner_nibbles = nibs[ascic_region_len as usize..].to_vec();
@@ -152,14 +160,13 @@ fn read_ascic_size(nibs: &Vec<u8>) -> Option<u32> {
     
 }
 
-// TODO: variable names in this function suck
 fn read_ascix_size(nibs: &Vec<u8>) -> Option<u32> {
-    println!("read ascix size");
+    //println!("read ascix size");
     // ASCIX consists of <1 byte length, ASCII data, same 1 byte
-    // length>.
+    // length>. It's almost identical to ASCIC.
 
-    let ascix_len = (nibs[1] << 4) + nibs[0];
-    let ascix_region_len = 2 + (ascix_len*2) + 2;
+    let ascix_char_len = (nibs[1] << 4) + nibs[0];
+    let ascix_region_len = 2 + (ascix_char_len*2) + 2;
 
     // slice then reconvert to Vec
     // Start at nibble 2 (first length), add ascii data len, then second length.
@@ -171,17 +178,20 @@ fn read_ascix_size(nibs: &Vec<u8>) -> Option<u32> {
     
 }
 
-// TODO: why do we add 1 here?
+
 fn read_size_to_end_marker(nibs: &Vec<u8>) -> Option<u32> {
-    println!("read_size_to_end_marker, nibs is {:?}", nibs);
+    //println!("read_size_to_end_marker, nibs is {:?}", nibs);
     let mut mem_addr = 0u32; // address in Saturn memory, 5 nibbles
     for (pos, i) in nibs.iter().enumerate() {
 	mem_addr <<= 4;
 	mem_addr |= *i as u32;
 	mem_addr &= 0xfffffu32; // Saturn uses 20-bit address
-	println!("{:#x}", mem_addr);
-	if mem_addr == 0xb2130 { // object end marker, reversed (actually 0x312b)
-	    println!("found end marker, exiting");
+	//println!("{:#x}", mem_addr);
+	// object end marker, reversed (actually 0x312b) because the
+	// calculator reads nibbles in reverse
+	if mem_addr == 0xb2130 {
+	    //println!("found end marker, exiting");
+	    // TODO: why do we add 1 here?
 	    return Some(pos as u32 + 1);
 	}
     }
@@ -190,7 +200,7 @@ fn read_size_to_end_marker(nibs: &Vec<u8>) -> Option<u32> {
 
     
 fn read_dir_size(nibs: &Vec<u8>) -> Option<u32> {
-    println!("read_dir_size");
+    //println!("read_dir_size");
     // A directory consists of the prolog (5 nibbles), attached
     // libraries (3 nibbles), an offset number (5 nibbles), and
     // 0x00000 (5 nibbles) indicating the end of the directory. The
@@ -200,25 +210,19 @@ fn read_dir_size(nibs: &Vec<u8>) -> Option<u32> {
 
     // 5 + 3 + 5 + 5 = 18 nibbles in
     let mut index = 18usize;
-    //let new_nibs = Vec::from(&nibs[index..]);
 
     // At 18 nibbles in, the first object is defined with an ASCIX
     // name followed by the contents of the object.
-    /*for i in &new_nibs {
-	print!("{:#x}, ", i);
-    }*/
-
     while index < nibs.len() - 18 {
 	let ascix_size = read_ascix_size(&nibs[index..].to_vec());
 	index += ascix_size.unwrap() as usize;
 	index += 5; // 5 nibble offset value after each object
-	println!("  ascix_size: {:?}", ascix_size);
+	//println!("  ascix_size: {:?}", ascix_size);
     }
 
     // Subtract the value of two object offsets, because we skip past
-    // the first one at the start, and the very last object in the
-    // directory has no offset.
-    
+    // the first one at the start (in the 18 nibbles in), and the very
+    // last object in the directory has no offset.
     // Directory objects don't include object counts, so this is
     // really the best way to do this.
     return Some(index as u32 - 5 - 5);
@@ -230,11 +234,17 @@ fn read_dir_size(nibs: &Vec<u8>) -> Option<u32> {
 // end---I don't know why---but I think HP 49 checksums should not be
 // printed, as they are very likely to be incorrect.
 
-// Returns an Option enclosing the integer value of the
-// checksum. Convert to a hex string yourself.
-pub fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
+// Returns an Option enclosing an ObjectInfo struct (see above).
+
+// This function calls external functions, which use the prolog of the
+// object and parse the object to find the number of nibbles that the
+// object occupies. This function makes a list of nibbles of the data,
+// then uses that value to iterate over the appropriate portion of the
+// file, calculating the CRC on each nibble.
+
+fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
     let file_contents = match std::fs::read(path) {
-	Err(_) => panic!("couldn't read file"),
+	Err(_) => panic!("Couldn't read file!"),
 	Ok(bytes) => bytes,
     };
 
@@ -254,14 +264,6 @@ pub fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
 	nibbles.push(byte & 0xfu8); // low nibble
 	nibbles.push(byte >> 4); // high nibble
     }
-
-    /*for byte in &file_contents[8..28] {
-	print!("{:#x}, ", byte);
-    }
-    println!();
-    for nib in &nibbles[0..30] {
-	print!("{:#x}, ", nib);
-    }*/
 
     let prolog = match get_prolog(&nibbles) {
 	Some(pro) => pro,
@@ -292,14 +294,12 @@ pub fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
     // object_length, so we can iterate from the start to that many
     // nibbles.
     let mut crc = 0u32;
-    println!("object_length is {:?}", object_length);
-    println!("{:?}", &nibbles[0..1000]);
+
     for nibble in &nibbles[0..object_length.unwrap() as usize] {
 	crc = calc_crc(crc, *nibble);
     }
 
-    println!("length of nibbles is {:?}", nibbles.len());
-    println!("crc is {:?}", crc);
+    // HP hex strings are uppercase
     let initial_str = format!("{:#x}", crc).to_uppercase();
 
     return Some(ObjectInfo {
@@ -307,4 +307,14 @@ pub fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
 	crc: format!("#{}h", &initial_str[2..]),
 	length: object_length.unwrap(),
     });
+}
+
+
+pub fn crc_and_output(path: &PathBuf) {
+    let object_info = crc_file(path);
+    if object_info.is_none() {
+	println!("File is not an HP object");
+    } else {
+	println!("{}", object_info.unwrap());
+    }
 }
