@@ -10,6 +10,11 @@
 
 use std::path::PathBuf;
 use std::ffi::OsStr;
+use std::fs::File;
+use std::thread;
+use std::time::Duration;
+use std::io::Write;
+
 use serialport;
 
 #[derive(PartialEq)]
@@ -23,7 +28,7 @@ const STX: u8 = 0x02;
 const EOT: u8 = 0x04;
 const ACK: u8 = 0x06;
 const NAK: u8 = 0x15;
-//const CAN: u8 = 0x18;
+const CAN: u8 = 0x18;
 
 const SUB: u8 = 0x1a; // used as packet filler, ascii code SUB (substitute)
 
@@ -195,7 +200,7 @@ fn data_to_conn4x_packets(data: &Vec<u8>) -> Vec<Vec<u8>> {
 }
 
 // Looks for ack_char on `port`, returns true if char found or false if NAK found.
-pub fn wait_for_char(port: &mut Box<dyn serialport::SerialPort>, ack_char: u8) -> bool {
+fn wait_for_char(port: &mut Box<dyn serialport::SerialPort>, ack_char: u8) -> bool {
     let mut buf: [u8; 1] = [0; 1];
     loop {
 	match port.read(buf.as_mut_slice()) {
@@ -220,7 +225,6 @@ pub fn wait_for_char(port: &mut Box<dyn serialport::SerialPort>, ack_char: u8) -
 fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::SerialPort>) {
     for (pos, packet) in packet_list.iter().enumerate() {
 	let mut retry_count = 0;
-	// TODO: .expect() may be the wrong thing to do here
 	match port.write(packet) {
 	    // TODO: I think the argument here is the number of bytes written
 	    Ok(_) => {},
@@ -264,10 +268,6 @@ fn get_file_contents(path: &PathBuf) -> Vec<u8> {
     return file_contents;
 }
 
-// much bigger TODO: sending files < 1024 bytes appears to not work or
-// something, and any file transfers appears to end up with corrupt
-// bytes (but the correct length, so things are mostly working)
-
 // Send `path` to the calculator with Conn4x-style XModem.
 pub fn send_file_conn4x(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
     let file_contents = get_file_contents(path);
@@ -276,7 +276,7 @@ pub fn send_file_conn4x(path: &PathBuf, port: &mut Box<dyn serialport::SerialPor
     
     let packet_list = data_to_conn4x_packets(&file_contents);
 
-    match port.write(&server_put_cmd(path.file_name().unwrap())) {
+    match port.write(&server_file_cmd(path.file_name().unwrap(), 'P')) {
 	Ok(_) => {},
 	Err(e) => { eprintln!("error writing packet: {:?}", e); std::process::exit(1) },
     };
@@ -286,8 +286,6 @@ pub fn send_file_conn4x(path: &PathBuf, port: &mut Box<dyn serialport::SerialPor
     wait_for_char(port, ACK);
     
     println!("got ACK for put command");
-    
-
     println!("file_contents.len() is {:?}", file_contents.len());
 
     // XModem Server sends D to indicate that it's ready for a
@@ -303,16 +301,18 @@ pub fn send_file_conn4x(path: &PathBuf, port: &mut Box<dyn serialport::SerialPor
 
 pub fn send_file_normal(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
     let file_contents = get_file_contents(path);
+    
     wait_for_char(port, NAK);
+    
     let packet_list = data_to_128_packets(&file_contents, 0, ChecksumMode::Normal);
     println!("{:?}", &packet_list[0..256]);
     send_packets(&packet_list, port);
 
 }
 
-fn server_put_cmd(name: &OsStr) -> Vec<u8> {
+fn server_file_cmd(name: &OsStr, cmd: char) -> Vec<u8> {
     let mut cmd_packet: Vec<u8> = Vec::new();
-    cmd_packet.push('P' as u8);
+    cmd_packet.push(cmd as u8);
     cmd_packet.push(((name.len() as u32 & 0xff00u32) >> 8) as u8);
     cmd_packet.push((name.len() as u32 & 0xffu32) as u8);
     let mut checksum = 0u32;
@@ -327,4 +327,71 @@ fn server_put_cmd(name: &OsStr) -> Vec<u8> {
     cmd_packet.push((checksum & 0xffu32) as u8);
     
     return cmd_packet;
+}
+
+
+// 128-byte packets sent with XModem Server are 132 bytes. The server
+// always sends 128-byte packets even if the file is big enough for 1K
+// XModem.
+pub fn get_file_conn4x(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool) {
+    let mut file = File::create(path).unwrap();
+
+    // we will push to a vector and then write to the file
+    let mut file_contents: Vec<u8> = Vec::new();
+
+    if !direct {
+	// Get server ready to send file
+	match port.write(&server_file_cmd(path.file_name().unwrap(), 'G')) {
+	    Ok(_) => {},
+	    Err(e) => { eprintln!("error writing packet: {:?}", e); std::process::exit(1) },
+	};
+	
+	// Wait for ACK from server about command
+	wait_for_char(port, ACK);
+
+	println!("got ACK for command");
+    }
+    
+    // Initiate first packet from calculator by sending NAK
+    let mut byte_buf: [u8; 1] = [NAK];
+
+    port.write(&byte_buf);
+    let mut packet_buf = vec![0; 132];
+    loop {
+	// needed, because I guess the calculator has to prepare the packet
+	thread::sleep(Duration::from_millis(300));
+	match port.read(packet_buf.as_mut_slice()) {
+	    Ok(s) => println!("read {:?} bytes", s),
+	    Err(e) => { eprintln!("error reading packet: {:?}", e); std::process::exit(1) },
+	};
+
+	if packet_buf[0] == EOT {
+	    println!("got EOT");
+	    byte_buf = [ACK];
+	    port.write(&byte_buf);
+	    // transmission finished
+	    break;
+	} else if packet_buf[0] == CAN {
+	    println!("got CAN");
+	    return;
+	}
+	
+	// verify checksum of this packet
+	let mut checksum = 0u32;
+	for i in &packet_buf[3..131] {
+	    checksum += *i as u32;
+	}
+
+	println!("calculated checksum is {:#x}, packet checksum is {:#x}", checksum as u8, packet_buf[131]);
+	if checksum as u8 == packet_buf[131] {
+	    println!("checksum matches");
+	    byte_buf = [ACK];
+	    port.write(&byte_buf);
+	    file_contents.extend_from_slice(&packet_buf[3..131]);
+	}
+	
+	println!("{:?}", packet_buf);
+    }
+    file.write_all(&file_contents);
+    
 }

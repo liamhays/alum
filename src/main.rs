@@ -5,10 +5,9 @@ use std::time::Duration;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use colored::Colorize;
+use console::style;
 use serialport;
 
-//use xmodem::XModemPacketMode;
 // TODO: Command line flags should be in a more useful order than
 // alphabetical
 
@@ -35,9 +34,6 @@ struct Cli {
     #[clap(short, long, action, default_value_t = false)]
     finish: bool,
 
-    /// Overwrite pre-existing file on computer if necessary
-    #[clap(short, long, action, default_value_t = false)]
-    overwrite: bool,  
 }
 
 
@@ -70,12 +66,24 @@ enum Commands {
     Kget {
 	#[clap(parse(from_os_str))]
 	path: std::path::PathBuf,
+
+	/// Overwrite pre-existing file on computer if necessary
+	#[clap(short, long, action, default_value_t = false)]
+	overwrite: bool,
     },
 
     /// Get file from XModem server
     Xget {
 	#[clap(parse(from_os_str))]
 	path: std::path::PathBuf,
+
+	/// Overwrite pre-existing file on computer if necessary
+	#[clap(short, long, action, default_value_t = false)]
+	overwrite: bool,
+
+	/// Get from direct XSEND, not server (bypasses server operations)
+	#[clap(short, long, action, default_value_t = false)]
+	direct: bool,
     },
 
     /// Run HP object info check on `path` instead of file transfer
@@ -112,7 +120,7 @@ fn get_serial_port(cli_port: Option<PathBuf>, cli_baud: Option<u32>) -> Box<dyn 
     };
     
     serialport::new(final_port, final_baud)
-	.timeout(Duration::from_millis(2000))
+	.timeout(Duration::from_millis(4000))
 	.open().expect("Failed to open port")
 
 }
@@ -130,7 +138,10 @@ fn main() {
 	    println!("Xsend, direct = {:?}, path = {:?}", direct, path);
 	    if *direct {
 		if cli.finish {
-		    println!("{}: {}{}{}", "warning".bright_yellow().bold(), "ignoring flag ", "-f".green(), " (finish) used in XModem direct mode");
+		    println!("{}: {}{}{}",
+			     style("warning").on_yellow().bold(),
+			     "ignoring flag ", style("-f").green(),
+			     " (finish) used in XModem direct mode");
 		}
 		xmodem::send_file_normal(&path.to_path_buf(), &mut port);
 	    } else {
@@ -140,9 +151,11 @@ fn main() {
 	    }
 	},
 
-	Commands::Xget { path } => {
-	    //let mut port = get_serial_port(cli.port, cli.baud);
-	    println!("Xget, path = {:?}", path);
+	Commands::Xget { direct, path, overwrite } => {
+	    let mut port = get_serial_port(cli.port, cli.baud);
+	    println!("Xget, path = {:?}, overwrite = {:?}", path, overwrite);
+	    xmodem::get_file_conn4x(path, &mut port, direct);
+	    
 	},
 
 	Commands::Ksend { path } => {
@@ -150,9 +163,9 @@ fn main() {
 	    println!("Ksend, path = {:?}", path);
 	},
 
-	Commands::Kget { path } => {
+	Commands::Kget { path, overwrite } => {
 	    //let mut port = get_serial_port(cli.port, cli.baud);
-	    println!("Kget, path = {:?}", path);
+	    println!("Kget, path = {:?}, overwrite = {:?}", path, overwrite);
 	},
 
 	Commands::Info { path } => {
