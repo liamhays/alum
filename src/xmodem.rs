@@ -193,7 +193,6 @@ fn data_to_conn4x_packets(data: &Vec<u8>) -> Vec<Vec<u8>> {
     let mut packets_128 = data_to_128_packets(&substr_128, packet_offset, ChecksumMode::Conn4x);
     // Append both vectors together for the final list
     packet_list.append(&mut packets_128);
-    //println!("{:?}", packet_list);
     
     return packet_list;
 }
@@ -223,6 +222,9 @@ fn get_progress_bar(len: u64) -> ProgressBar {
     let pb = ProgressBar::new(len);
     pb.set_style(ProgressStyle::default_bar()
 		 // spaces don't matter in this fromat string
+		 
+		 // wide_bar means expand to fill space, :2 means
+		 // surround with 2 spaces (I think).
 		 .template("{wide_bar} {pos:>2}/{len:2} packets ({percent}%)")
 		 .progress_chars("##-"));
     return pb;
@@ -274,15 +276,15 @@ fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::Seria
     }
     // make the progress bar visible on screen
     pb.finish();
-    
-
 }
 
 fn get_file_contents(path: &PathBuf) -> Vec<u8> {
     // This gives a Vec<u8>.
     // from https://www.reddit.com/r/rust/comments/dekpl5/comment/f2wminn/
     let file_contents = match std::fs::read(path) {
-	Err(e) => panic!("couldn't read {}: {}", path.display(), e),
+	// we have to make the match arms, well, match, so we return a
+	// new Vec, which should never actually get created
+	Err(e) => { error_handler(format!("couldn't read {}: {}", path.display(), e)); Vec::new() },
 	Ok(bytes) => bytes
     };
     return file_contents;
@@ -301,8 +303,6 @@ pub fn send_file_conn4x(path: &PathBuf, port: &mut Box<dyn serialport::SerialPor
     
     wait_for_char(port, ACK);
     
-    //println!("got ACK for put command");
-
     // XModem Server sends D to indicate that it's ready for a
     // Conn4x-style XModem transfer
     wait_for_char(port, 'D' as u8);
@@ -382,7 +382,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     let mut file_contents: Vec<u8> = Vec::new();
 
     if !direct {
-	// Get server ready to send file
+	// Tell XModem server to send file
 	match port.write(&create_command_packet(path.file_name().unwrap(), 'G')) {
 	    Ok(_) => {},
 	    Err(e) => error_handler(format!("Error: failed to write packet writing packet {:?}", e)),
@@ -392,8 +392,6 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	if wait_for_char(port, ACK) != ACK {
 	    error_handler("Error: got NAK from server when sending 'get' command.".to_string());
 	}
-
-	println!("got ACK for command");
     }
 
     // This is needed, probably because the calculator is pretty slow.
@@ -412,10 +410,9 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	// Also needed, as far as I can tell.
 	thread::sleep(Duration::from_millis(300));
 	match port.read(packet_buf.as_mut_slice()) {
-	    Ok(s) => println!("read {:?} bytes", s),
+	    Ok(s) => println!("read packet {:?}", packet_counter),
 	    Err(e) => error_handler(format!("error reading packet: {:?}", e)),
 	};
-
 
 	if packet_buf[0] == EOT {
 	    byte_buf = [ACK];
@@ -438,7 +435,6 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 
 	//println!("calculated checksum is {:#x}, packet checksum is {:#x}", checksum as u8, packet_buf[131]);
 	if checksum as u8 == packet_buf[131] {
-	    //println!("checksum matches");
 	    byte_buf = [ACK];
 	    match port.write(&byte_buf) {
 		Ok(_) => {},
@@ -457,9 +453,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	    }
 	    continue; // skip packet counter increment
 	}
-	
-	
-	//println!("{:?}", packet_buf);
+
 	packet_counter += 1;
     }
     
@@ -467,6 +461,4 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	Ok(_) => {},
 	Err(e) => error_handler(format!("Error: failed to write to output file: {:?}", e)),
     }
-	
-    
 }
