@@ -120,7 +120,7 @@ fn get_serial_port(cli_port: Option<PathBuf>, cli_baud: Option<u32>) -> Box<dyn 
     };
     
     serialport::new(final_port, final_baud)
-	.timeout(Duration::from_millis(4000))
+	.timeout(Duration::from_millis(1500))
 	.open().expect("Failed to open port")
 
 }
@@ -154,7 +154,6 @@ fn main() {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Xget, path = {:?}, overwrite = {:?}", path, overwrite);
 	    xmodem::get_file(path, &mut port, direct);
-	    
 	},
 
 	Commands::Ksend { path } => {
