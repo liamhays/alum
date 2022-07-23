@@ -136,6 +136,7 @@ fn main() {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Xsend, direct = {:?}, path = {:?}", direct, path);
 	    if *direct {
+		// send file directly to XRECV
 		if cli.finish {
 		    println!("{}: {}{}{}",
 			     style("warning").on_yellow().bold(),
@@ -145,7 +146,6 @@ fn main() {
 		xmodem::send_file_normal(&path.to_path_buf(), &mut port);
 	    } else {
 		// send file to server
-		println!("send file to server");
 		xmodem::send_file_conn4x(&path.to_path_buf(), &mut port);
 	    }
 	},

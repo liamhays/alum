@@ -29,6 +29,7 @@ impl fmt::Display for ObjectInfo {
     }
 }
 
+// TODO: Implement lists!
 fn prolog_to_length(prolog: u32) -> Option<LengthState> {
     //        DOBINT  DOREAL  DOEREL  DOCMP   DOECMP  DOCHAR  DOROMP
     for i in [0x2911, 0x2933, 0x2955, 0x2977, 0x299d, 0x29bf, 0x29e2] {
@@ -54,8 +55,8 @@ fn prolog_to_length(prolog: u32) -> Option<LengthState> {
     }
 
     // TODO: fix these address names
-    //        DOUNIT  prog    algebraic
-    for i in [0x2ada, 0x2d9d, 0x2ab8] {
+    //        DOUNIT  prog    algbr   list
+    for i in [0x2ada, 0x2d9d, 0x2ab8, 0x2a74] {
 	if prolog == i {
 	    return Some(LengthState::FindEndMarker);
 	}

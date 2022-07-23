@@ -224,7 +224,7 @@ fn get_progress_bar(len: u64) -> ProgressBar {
     let pb = ProgressBar::new(len);
     pb.set_style(ProgressStyle::default_bar()
 		 // spaces don't matter in this fromat string
-		 .template("{wide_bar} {pos:>7}/{len:7} {percent}%")
+		 .template("{wide_bar} {pos:>2}/{len:2} packets ({percent}%)")
 		 .progress_chars("##-"));
     return pb;
 }
@@ -232,8 +232,7 @@ fn get_progress_bar(len: u64) -> ProgressBar {
 // The way packets are sent and responses are handled don't change.
 // TODO: implement CANcel
 fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::SerialPort>) {
-    //let pb = get_progress_bar(packet_list.len() as u64);
-    println!("{:?}", packet_list);
+    let pb = get_progress_bar(packet_list.len() as u64);
     
     for (pos, packet) in packet_list.iter().enumerate() {
 	let mut retry_count = 0;
@@ -257,35 +256,27 @@ fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::Seria
 	    }
 	} else if c == CAN {
 	    // cancel, just exit.
-	    //pb.finish();
+	    pb.finish();
 	    error_handler("Error: transfer cancelled by calculator.".to_string());
 	}
 	
-	println!("got ACK for packet {:?}", pos);
-	//pb.inc(1);
+	pb.inc(1);
 	// if we successfully sent the last packet, send EOT after the
 	// last ACK. This will trigger another ACK, which we look for
 	// below (but probably don't need to)
 	if pos == packet_list.len() - 1 && c == ACK {
-	    println!("sending EOT");
-	    let mut wr_buf: [u8; 2] = [EOT, EOT];
+	    //println!("sending EOT");
+	    let wr_buf: [u8; 1] = [EOT];
 	    match port.write(&wr_buf) {
 		Ok(_) => {},
 		Err(e) => error_handler(format!("Error: failed to send EOT: {:?}", e)),
 	    }
 	    wait_for_char(port, ACK);
 
-	    //thread::sleep(Duration::from_millis(300));
-	    println!("got ACK for EOT");
-	    /*wr_buf = ['M' as u8];
-	    match port.write(&wr_buf) {
-		Ok(_) => {},
-		Err(e) => error_handler(format!("Error: failed to send M: {:?}", e)),
-	    }*/
 	}
     }
     // make the progress bar visible on screen
-    //pb.finish();
+    pb.finish();
     
 
 }
@@ -304,18 +295,16 @@ fn get_file_contents(path: &PathBuf) -> Vec<u8> {
 pub fn send_file_conn4x(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
     let file_contents = get_file_contents(path);
     
-    println!("Sending file in Conn4x style");
-    
     let packet_list = data_to_conn4x_packets(&file_contents);
 
-    match port.write(&server_file_cmd(path.file_name().unwrap(), 'P')) {
+    match port.write(&create_command_packet(path.file_name().unwrap(), 'P')) {
 	Ok(_) => {},
 	Err(e) => error_handler(format!("error writing packet: {:?}", e)),
     };
     
     wait_for_char(port, ACK);
     
-    println!("got ACK for put command");
+    //println!("got ACK for put command");
 
     // XModem Server sends D to indicate that it's ready for a
     // Conn4x-style XModem transfer
@@ -331,26 +320,30 @@ pub fn send_file_normal(path: &PathBuf, port: &mut Box<dyn serialport::SerialPor
     wait_for_char(port, NAK);
     
     let packet_list = data_to_128_packets(&file_contents, 0, ChecksumMode::Normal);
-    println!("{:?}", &packet_list[0..256]);
+    //println!("{:?}", &packet_list[0..256]);
     send_packets(&packet_list, port);
 
 }
 
+// TODO: this should probably use colorized output, take a prefix argument, etc.
 fn error_handler(err: std::string::String) {
     eprintln!("{}", err);
     std::process::exit(1);
 }
 
-fn server_file_cmd(name: &OsStr, cmd: char) -> Vec<u8> {
+// This function creates a "command packet" for the XModem server. It
+// also adds the initial command to the entire Vec<u8>. See my XModem
+// Server documentation for more information about this.
+fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
     let mut cmd_packet: Vec<u8> = Vec::new();
     cmd_packet.push(cmd as u8);
-    cmd_packet.push(((name.len() as u32 & 0xff00u32) >> 8) as u8);
-    cmd_packet.push(name.len() as u8);
+    cmd_packet.push(((data.len() as u32 & 0xff00u32) >> 8) as u8);
+    cmd_packet.push(data.len() as u8);
     let mut checksum = 0u32;
     // You can't iterate over an OsStr because it might contain
     // different encodings, so you have to convert it. You can iterate
     // over a &str, which to_str() creates.
-    for c in name.to_str().unwrap().chars() {
+    for c in data.to_str().unwrap().chars() {
 	cmd_packet.push(c as u8);
 	checksum += c as u32;
     }
@@ -372,7 +365,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 
     if !direct {
 	// Get server ready to send file
-	match port.write(&server_file_cmd(path.file_name().unwrap(), 'G')) {
+	match port.write(&create_command_packet(path.file_name().unwrap(), 'G')) {
 	    Ok(_) => {},
 	    Err(e) => error_handler(format!("Error: failed to write packet writing packet {:?}", e)),
 	}
@@ -384,7 +377,9 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 
 	println!("got ACK for command");
     }
-    
+
+    // Necessary, probably because the calculator is slow.
+    thread::sleep(Duration::from_millis(500));
     // Initiate first packet from calculator by sending NAK
     let mut byte_buf: [u8; 1] = [NAK];
 
@@ -403,8 +398,9 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	    Err(e) => error_handler(format!("error reading packet: {:?}", e)),
 	};
 
+
 	if packet_buf[0] == EOT {
-	    println!("got EOT");
+	    //println!("got EOT");
 	    byte_buf = [ACK];
 	    match port.write(&byte_buf) {
 		Ok(_) => {},
@@ -424,9 +420,9 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	    checksum += *i as u32;
 	}
 
-	println!("calculated checksum is {:#x}, packet checksum is {:#x}", checksum as u8, packet_buf[131]);
+	//println!("calculated checksum is {:#x}, packet checksum is {:#x}", checksum as u8, packet_buf[131]);
 	if checksum as u8 == packet_buf[131] {
-	    println!("checksum matches");
+	    //println!("checksum matches");
 	    byte_buf = [ACK];
 	    match port.write(&byte_buf) {
 		Ok(_) => {},
@@ -436,7 +432,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	    file_contents.extend_from_slice(&packet_buf[3..131]);
 	}
 	
-	println!("{:?}", packet_buf);
+	//println!("{:?}", packet_buf);
 	packet_counter += 1;
     }
     
