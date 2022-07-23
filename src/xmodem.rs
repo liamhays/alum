@@ -9,6 +9,7 @@
 // `pub mod` not needed, as this is already declared a module in main.rs.
 
 use std::path::PathBuf;
+use std::path::Path;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::thread;
@@ -189,8 +190,6 @@ fn data_to_conn4x_packets(data: &Vec<u8>) -> Vec<Vec<u8>> {
 	substr_128.push(*i);
     }
 
-    // TODO: this +1usize breaks a send smaller than 1024, because the
-    // packet we try to send starts with sequence number 2.
     let mut packets_128 = data_to_128_packets(&substr_128, packet_offset, ChecksumMode::Conn4x);
     // Append both vectors together for the final list
     packet_list.append(&mut packets_128);
@@ -230,14 +229,12 @@ fn get_progress_bar(len: u64) -> ProgressBar {
 }
 
 // The way packets are sent and responses are handled don't change.
-// TODO: implement CANcel
 fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::SerialPort>) {
     let pb = get_progress_bar(packet_list.len() as u64);
     
     for (pos, packet) in packet_list.iter().enumerate() {
 	let mut retry_count = 0;
 	match port.write(packet) {
-	    // TODO: I think the argument here is the number of bytes written
 	    Ok(_) => {},
 	    Err(e) => error_handler(format!("Error: failed to write packet {:?}", e)),
 	}
@@ -357,10 +354,31 @@ fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
 // 128-byte packets sent with XModem Server are 132 bytes, hence the
 // function name. The server always sends 128-byte packets even if the
 // file is big enough for 1K XModem.
-pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool) {
-    let mut file = File::create(path).unwrap();
+pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool, overwrite: &bool) {
+    let mut file = match overwrite {
+	true => File::create(path).unwrap(),
+	false => {
+	    let mut counter = 0;
+	    // We loop starting with the counter at 0, until we find a
+	    // file that doesn't exist. This is a bit of a hack,
+	    // because we convert path to a String and then make a
+	    // Path back from a modified string.
+	    loop {
+		let new_string = match counter {
+		    0 => String::from(path.to_str().unwrap()),
+		    _ => format!("{}.{:?}", path.to_str().unwrap(), counter),
+		};
+		let new_path = Path::new(&new_string);
+		if !new_path.exists() {
+		    break File::create(new_path).unwrap();
+		}
 
-    // we will push to a vector and then write to the file
+		counter += 1;
+	    }
+	}
+    };
+
+    // We'll push to a Vec<u8>, then write to the file.
     let mut file_contents: Vec<u8> = Vec::new();
 
     if !direct {
@@ -378,7 +396,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	println!("got ACK for command");
     }
 
-    // Necessary, probably because the calculator is slow.
+    // This is needed, probably because the calculator is pretty slow.
     thread::sleep(Duration::from_millis(500));
     // Initiate first packet from calculator by sending NAK
     let mut byte_buf: [u8; 1] = [NAK];
@@ -391,7 +409,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     let mut packet_buf = vec![0; 132];
     let mut packet_counter = 0u32;
     loop {
-	// needed, because I guess the calculator has to prepare the packet
+	// Also needed, as far as I can tell.
 	thread::sleep(Duration::from_millis(300));
 	match port.read(packet_buf.as_mut_slice()) {
 	    Ok(s) => println!("read {:?} bytes", s),
@@ -400,17 +418,15 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 
 
 	if packet_buf[0] == EOT {
-	    //println!("got EOT");
 	    byte_buf = [ACK];
 	    match port.write(&byte_buf) {
 		Ok(_) => {},
-		Err(e) => error_handler(format!(
-		    "Error: failed to write ACK for EOT: {:?}", e)),
+		Err(e) => error_handler(format!("Error: failed to write ACK for EOT: {:?}", e)),
 	    }
 	    // transmission finished
 	    break;
 	} else if packet_buf[0] == CAN {
-	    println!("got CAN");
+	    println!("Received cancel from remote side, exiting.");
 	    return;
 	}
 	
@@ -430,7 +446,18 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 		    "Error: failed to write ACK for packet {:?}: {:?}", packet_counter, e)),
 	    }
 	    file_contents.extend_from_slice(&packet_buf[3..131]);
+	} else {
+	    // currently untested, so ya know...
+	    eprintln!("Checksum failed for packet {:?}, sending NAK and trying again.", packet_counter);
+	    byte_buf = [NAK];
+	    match port.write(&byte_buf) {
+		Ok(_) => {},
+		Err(e) => error_handler(format!(
+		    "Error: failed to write NAK for packet {:?}: {:?}", packet_counter, e)),
+	    }
+	    continue; // skip packet counter increment
 	}
+	
 	
 	//println!("{:?}", packet_buf);
 	packet_counter += 1;

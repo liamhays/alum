@@ -153,7 +153,7 @@ fn main() {
 	Commands::Xget { direct, path, overwrite } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Xget, path = {:?}, overwrite = {:?}", path, overwrite);
-	    xmodem::get_file(path, &mut port, direct);
+	    xmodem::get_file(path, &mut port, direct, overwrite);
 	},
 
 	Commands::Ksend { path } => {

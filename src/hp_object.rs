@@ -55,7 +55,8 @@ fn prolog_to_length(prolog: u32) -> Option<LengthState> {
     }
 
     // TODO: fix these address names
-    //        DOUNIT  prog    algbr   list
+    //        unit    program algebraic
+    //        DOEXT   DOCOL   DOSYMB  DOLIST
     for i in [0x2ada, 0x2d9d, 0x2ab8, 0x2a74] {
 	if prolog == i {
 	    return Some(LengthState::FindEndMarker);
