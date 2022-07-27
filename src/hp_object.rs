@@ -32,7 +32,6 @@ impl fmt::Display for ObjectInfo {
     }
 }
 
-// TODO: Implement lists!
 fn prolog_to_length(prolog: u32) -> Option<LengthState> {
     //        DOBINT  DOREAL  DOEREL  DOCMP   DOECMP  DOCHAR  DOROMP
     for i in [0x2911, 0x2933, 0x2955, 0x2977, 0x299d, 0x29bf, 0x29e2] {
@@ -57,7 +56,6 @@ fn prolog_to_length(prolog: u32) -> Option<LengthState> {
 	}
     }
 
-    // TODO: fix these address names
     //        unit    program algebraic
     //        DOEXT   DOCOL   DOSYMB  DOLIST
     for i in [0x2ada, 0x2d9d, 0x2ab8, 0x2a74] {
@@ -184,17 +182,24 @@ fn read_ascix_size(nibs: &Vec<u8>) -> Option<u32> {
 }
 
 
+// TODO: this does not work, because it should load 5 nibbles at a time.
 fn read_size_to_end_marker(nibs: &Vec<u8>) -> Option<u32> {
-    //println!("read_size_to_end_marker, nibs is {:?}", nibs);
+    println!("read_size_to_end_marker, nibs is {:x?}", nibs);
     let mut mem_addr = 0u32; // address in Saturn memory, 5 nibbles
     for (pos, i) in nibs.iter().enumerate() {
+	println!("i is {:x?}", i);
 	mem_addr <<= 4;
 	mem_addr |= *i as u32;
 	mem_addr &= 0xfffffu32; // Saturn uses 20-bit address
-	//println!("{:#x}", mem_addr);
-	// object end marker, reversed (actually 0x312b) because the
-	// calculator reads nibbles in reverse
-	if mem_addr == 0xb2130 {
+	println!("{:?}: {:#x}", pos, mem_addr);
+	// object end marker, reversed (actually 0x312b) because
+	// the calculator reads nibbles in reverse
+	
+	// note that end marker is just SEMI---so a program could
+	// contain multiple secondaries, and we have to pick up
+	// only the very last SEMI. the `pos == ...` term does
+	// that.
+	if mem_addr == 0xb2130 && pos == nibs.len() - 1 {
 	    //println!("found end marker, exiting");
 	    // TODO: why do we add 1 here?
 	    return Some(pos as u32 + 1);
