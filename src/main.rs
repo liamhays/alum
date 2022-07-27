@@ -1,5 +1,7 @@
 mod xmodem;
 mod hp_object;
+mod kermit;
+mod helpers;
 
 use std::time::Duration;
 use std::path::PathBuf;
@@ -125,8 +127,10 @@ fn get_serial_port(cli_port: Option<PathBuf>, cli_baud: Option<u32>) -> Box<dyn 
 
 }
 // The finish argument is to be ignored (and a message printed) if the
-// direct flag is set. That is the only time---again, so simple.
+// direct flag is set. That is the only time---again, so simple
+// compared to HPex.
 
+// TODO: receiving a file should calculate CRC after getting file
 fn main() {
     let cli = Cli::parse();
 
@@ -146,19 +150,21 @@ fn main() {
 		xmodem::send_file_normal(&path.to_path_buf(), &mut port);
 	    } else {
 		// send file to server
-		xmodem::send_file_conn4x(&path.to_path_buf(), &mut port);
+		xmodem::send_file_conn4x(&path.to_path_buf(), &mut port, &cli.finish);
 	    }
 	},
 
 	Commands::Xget { direct, path, overwrite } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Xget, path = {:?}, overwrite = {:?}", path, overwrite);
-	    xmodem::get_file(path, &mut port, direct, overwrite);
+	    xmodem::get_file(path, &mut port, direct, overwrite, &cli.finish);
 	},
 
 	Commands::Ksend { path } => {
-	    //let mut port = get_serial_port(cli.port, cli.baud);
+	    let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Ksend, path = {:?}", path);
+	    kermit::send_file(path, &mut port);
+
 	},
 
 	Commands::Kget { path, overwrite } => {

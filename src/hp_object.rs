@@ -2,6 +2,9 @@ use std::path::PathBuf;
 use std::fmt;
 
 // TODO: Check lengths of vectors before reading
+
+// TODO: This failed for CAL, I don't know why.
+
 fn calc_crc(crc: u32, nibble: u8) -> u32 {
     return (crc >> 4) ^ (((crc ^ nibble as u32) & 0xFu32) * 0x1081u32);
 }

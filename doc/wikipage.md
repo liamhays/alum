@@ -32,7 +32,7 @@ the header is the higher-order byte of the number). For `IOPAR`, the
 header would be the bytes `\x00\x05`, because `IOPAR` is five bytes
 long.
 
-Now, define a function `checksum`. Here's a Python implementation:
+Now, define a function `checksum`.
 
 ```python
 def checksum(s: str) -> int:
@@ -134,7 +134,7 @@ command(s) you want to execute on the calculator. There is no way to
 get a response back, except for storing data in a variable and
 transferring that variable.
 ## Kill server (`Q`)
-Send this command to close the server on the calculator.
+This command ends the server on the calculator.
 ## Put file (`P`)
 To upload a file to the calculator, send this command and then send a
 command packet with the destination filename. Then, you can start an
