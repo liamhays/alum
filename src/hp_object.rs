@@ -182,24 +182,27 @@ fn read_ascix_size(nibs: &Vec<u8>) -> Option<u32> {
 }
 
 
-// TODO: this does not work, because it should load 5 nibbles at a time.
 fn read_size_to_end_marker(nibs: &Vec<u8>) -> Option<u32> {
     println!("read_size_to_end_marker, nibs is {:x?}", nibs);
     let mut mem_addr = 0u32; // address in Saturn memory, 5 nibbles
     for (pos, i) in nibs.iter().enumerate() {
-	println!("i is {:x?}", i);
 	mem_addr <<= 4;
 	mem_addr |= *i as u32;
 	mem_addr &= 0xfffffu32; // Saturn uses 20-bit address
-	println!("{:?}: {:#x}", pos, mem_addr);
-	// object end marker, reversed (actually 0x312b) because
-	// the calculator reads nibbles in reverse
+	//println!("{:?}: {:#x}", pos, mem_addr);
+	
+	// object end marker, reversed (SEMI is actually 0x312b)
+	// because the calculator reads nibbles in reverse
 	
 	// note that end marker is just SEMI---so a program could
 	// contain multiple secondaries, and we have to pick up
 	// only the very last SEMI. the `pos == ...` term does
 	// that.
-	if mem_addr == 0xb2130 && pos == nibs.len() - 1 {
+
+	// Also, because the HP pads to the nearest byte, there could
+	// actually be another 0 nibble after 'b2130', hence `...len()
+	// - 2`.
+	if mem_addr == 0xb2130 && (pos == nibs.len() - 1 || pos == nibs.len() - 2) {
 	    //println!("found end marker, exiting");
 	    // TODO: why do we add 1 here?
 	    return Some(pos as u32 + 1);
