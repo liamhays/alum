@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use indicatif::{ProgressBar, ProgressStyle};
+
 pub fn get_file_contents(path: &PathBuf) -> Vec<u8> {
     // This gives a Vec<u8>.
     // from https://www.reddit.com/r/rust/comments/dekpl5/comment/f2wminn/
@@ -23,3 +25,16 @@ pub fn div_up(a: usize, b: usize) -> usize {
     // We *know* that the hint is exact, this is thus precisely the amount of chunks of length `b` each
     (0..a).step_by(b).size_hint().0
 }
+
+pub fn get_progress_bar(len: u64, label: std::string::String) -> ProgressBar {
+    let pb = ProgressBar::new(len);
+    pb.set_style(ProgressStyle::default_bar()
+		 // spaces don't matter in this fromat string
+		 
+		 // wide_bar means expand to fill space, :2 means
+		 // surround with 2 spaces (I think).
+		 .template(format!("{{wide_bar}} {{pos:>2}}/{{len:2}} {label} ({{percent}}%)").as_str())
+		 .progress_chars("##-"));
+    return pb;
+}
+

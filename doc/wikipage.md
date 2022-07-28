@@ -192,3 +192,16 @@ Conn4x parses this file and extracts the text element.
 The Conn4x source contains code for other types of checksums. It might
 just be remnants from previous development.
  
+
+# To be organized
+When the calculator sends, it pads with 0. When the Kit sends, it
+pads with the bytes starting at the address that is the number of
+bytes from the file in the packet. For example, let a file
+requires two 128-byte packets to send. The first one is full, but
+the second one needs to contain only 65 bytes. The XModem header
+and 65 bytes are appended to the packet, and the remainder of the
+packet contains bytes starting from address 65 (0x41) in the
+original file.
+
+I find this very, very strange. However, the XModem server will
+also accept zero-padded packets.

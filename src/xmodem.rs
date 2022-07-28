@@ -17,8 +17,6 @@ use std::thread;
 use std::time::Duration;
 use std::io::Write;
 
-use indicatif::ProgressBar;
-use indicatif::ProgressStyle;
 use serialport;
 
 #[derive(PartialEq)]
@@ -212,21 +210,11 @@ fn wait_for_char(port: &mut Box<dyn serialport::SerialPort>, ack_char: u8) -> u8
     return ack_char;
 }
 
-fn get_progress_bar(len: u64) -> ProgressBar {
-    let pb = ProgressBar::new(len);
-    pb.set_style(ProgressStyle::default_bar()
-		 // spaces don't matter in this fromat string
-		 
-		 // wide_bar means expand to fill space, :2 means
-		 // surround with 2 spaces (I think).
-		 .template("{wide_bar} {pos:>2}/{len:2} packets ({percent}%)")
-		 .progress_chars("##-"));
-    return pb;
-}
+
 
 // The way packets are sent and responses are handled don't change.
 fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::SerialPort>) {
-    let pb = get_progress_bar(packet_list.len() as u64);
+    let pb = crate::helpers::get_progress_bar(packet_list.len() as u64, "packets".to_string());
     
     for (pos, packet) in packet_list.iter().enumerate() {
 	let mut retry_count = 0;
@@ -249,7 +237,7 @@ fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::Seria
 	    }
 	} else if c == CAN {
 	    // cancel, just exit.
-	    pb.finish();
+	    pb.abandon();
 	    crate::helpers::error_handler("Error: transfer cancelled by calculator.".to_string());
 	}
 	
@@ -350,7 +338,10 @@ fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
 // function name. The server always sends 128-byte packets even if the
 // file is big enough for 1K XModem.
 
-// TODO: packet # not working
+// TODO: this needs to remote the extra bytes at the end of the
+// file. I think we can do this by looking for zeros that stretch to
+// the end of the packet, in the last packet
+
 pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool, overwrite: &bool, finish: &bool) {
     let mut file = match overwrite {
 	true => File::create(path).unwrap(),
@@ -389,6 +380,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	if wait_for_char(port, ACK) != ACK {
 	    crate::helpers::error_handler("Error: got NAK from server when sending 'get' command.".to_string());
 	}
+	println!("got ACK");
     }
 
     // This is needed, probably because the calculator is pretty slow.
@@ -403,6 +395,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     
     let mut packet_buf = vec![0; 132];
     let mut packet_counter = 0u32;
+    
     loop {
 	// Also needed, as far as I can tell.
 	thread::sleep(Duration::from_millis(300));
@@ -444,7 +437,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	    }
 	    file_contents.extend_from_slice(&packet_buf[3..131]);
 	} else {
-	    // currently untested, so ya know...
+	    // currently untested...
 	    eprintln!("Checksum failed for packet {:?}, sending NAK and trying again.", packet_counter);
 	    byte_buf = [NAK];
 	    match port.write(&byte_buf) {
@@ -456,6 +449,30 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	}
 
 	packet_counter += 1;
+    }
+
+    // we need to iterate backwards over file_contents and remove
+    // bytes until we get a byte that isn't 0x00. Those 0x00 bytes
+    // have to be consecutive, which is why we keep track of
+    // last_index.
+    let mut final_zero = 0;
+    // no way this clone is be efficient, we should find a better way
+    for (pos, c) in file_contents.clone().iter().rev().enumerate() {
+	let index = file_contents.len() - 1 - pos;
+	//println!("{last_index}, {index}");
+	if *c != 0 {
+	    final_zero = index;
+	    println!("found non-zero at {index}");
+	    break;
+	}
+    }
+    // Now delete from final_zero to the end. This looks like weird
+    // syntax, but if we try to delete the value of the iterator,
+    // we'll outrun the vec. By deleting the same index, we delete the
+    // zeros as the end of the array decreases and approaches index
+    // final_zero.
+    for _ in final_zero..file_contents.len() {
+	file_contents.remove(final_zero);
     }
     
     match file.write_all(&file_contents) {

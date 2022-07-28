@@ -150,6 +150,7 @@ fn make_generic_packet(seq: &mut u32, ptype: char) -> Vec<u8> {
     return p.to_vec();
 }
 
+// TODO: should use Result instead of Option
 fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Option<KermitPacket> {
     // have to sleep, probably because the calculator is slow
     std::thread::sleep(std::time::Duration::from_millis(300));
@@ -159,26 +160,25 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Option<KermitPacke
 	Ok(_) => {},
 	Err(e) => crate::helpers::error_handler(format!("Error: failed to read header of packet: {:?}", e)),
     }
-    //println!("header: {:x?}", header);
     
     if header[0] != SOH {
-	println!("SOH missing");
+	eprintln!("SOH missing from packet.");
 	// something is very wrong
 	return None;
     }
 
     // LEN field
     let len = unchar(header[1]);
-    println!("len is {:?}", len);
-    // this would be len - 1, but we want to also read the CR at the end.
+    // this would be len - 1, but we want to also read the CR at the end of the packet.
     let mut rest_of_packet = vec![0 as u8; len as usize];
 
     match port.read(rest_of_packet.as_mut_slice()) {
 	Ok(_) => {},
 	Err(e) => crate::helpers::error_handler(format!("Error: failed to read packet data: {:?}", e)),
     }
-    println!("rest of packet is {:x?}", rest_of_packet);
-    // subtract 2 to drop 0x0d and check field, to isolate just data portion.
+    
+    // subtract 2 to drop 0x0d and check field, to isolate just data
+    // portion and assemble KermitPacket struct.
     let data_field = rest_of_packet[1..(len as usize - 2)].to_vec();
     let packet = KermitPacket {
 	len: header[1],
@@ -190,23 +190,28 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Option<KermitPacke
 	data: data_field.clone(),
     };
     
-    // get second-to-last-character 
     let rx_checksum = rest_of_packet[len as usize - 3];
     // verify checksum on packet
     if rx_checksum != packet.calc_check() {
 	return None;
     }
-    //println!("checksum matches");
+
     return Some(packet);
 }
 
 
 
+// TODO: a lot of binary files don't work sent with this.
+// TODO: finish server command
 
-    
+// See the top of this file for what this function actually
+// does. There are a lot of match statements, but it's how I catch
+// serial port and protocol errors.
 pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
     let file_contents = crate::helpers::get_file_contents(path);
 
+    let bar = crate::helpers::get_progress_bar(file_contents.len() as u64, "bytes".to_string());
+    
     // We are emulating a very basic Kermit: only type 1 block check
     // and a couple commands.
     let mut seq = 0u32;
@@ -214,15 +219,22 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
     let s_packet = make_s_packet(&mut seq);
     match port.write(&s_packet) {
 	Ok(_) => {},
-	Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"S\" packet: {:?}", e)),
+	Err(e) => {
+	    // abondon() leaves the progress bar in place, finish() clears it.
+	    bar.abandon();
+	    crate::helpers::error_handler(format!("Error: failed to write \"S\" packet: {:?}", e));
+	},
     }
-    
     let mut response = read_packet(port);
     match response {
-	None => crate::helpers::error_handler(
-	    "Error: got no or invalid response for \"S\" packet".to_string()),
+	None => {
+	    bar.abandon();
+	    crate::helpers::error_handler(
+		"Error: got no or invalid response for \"S\" packet".to_string());
+	},
 	_ => {
 	    if response.unwrap().ptype != 'Y' as u8 {
+		bar.abandon();
 		crate::helpers::error_handler("Error: no ACK for \"S\" packet. Try sending again.".to_string());
 	    }
 	},
@@ -231,14 +243,21 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
     let f_packet = make_f_packet(&mut seq, path.file_name().unwrap());
     match port.write(&f_packet) {
     	Ok(_) => {},
-	Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"F\" packet: {:?}", e)),
+	Err(e) => {
+	    bar.abandon();
+	    crate::helpers::error_handler(format!("Error: failed to write \"F\" packet: {:?}", e));
+	}
     }
     response = read_packet(port);
     match response {
-	None => crate::helpers::error_handler(
-	    "Error: got no or invalid response for \"F\" packet: {:?}".to_string()),
+	None => {
+	    bar.abandon();
+	    crate::helpers::error_handler(
+		"Error: got no or invalid response for \"F\" packet: {:?}".to_string());
+	}
 	_ => {
 	    if response.unwrap().ptype != 'Y' as u8 {
+		bar.abandon();
 		crate::helpers::error_handler("Error: no ACK for \"F\" packet. Try sending again.".to_string());
 	    }
 	},
@@ -261,12 +280,12 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	    packet_data.push(c);
 	    bytes_added += 1;
 	}
-
+	bar.inc(1);
 	// The whole control prefix issue means that the packet length
 	// can change. 83 is the minimum number of bytes in the data
 	// field.
 	if bytes_added > 83 {
-	    println!("bytes_added is {:?}", bytes_added);
+	    //println!("bytes_added is {:?}", bytes_added);
 
 	    let p = KermitPacket {
 		len: tochar(bytes_added as u8 + 3),
@@ -277,17 +296,24 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 
 	    match port.write(&p) {
     		Ok(_) => {},
-		Err(e) => crate::helpers::error_handler(
-		    format!("Error: failed to write data (\"D\") packet: {:?}", e)),
+		Err(e) => {
+		    bar.abandon();
+		    crate::helpers::error_handler(
+			format!("Error: failed to write data (\"D\") packet: {:?}", e));
+		},
 	    }
 	    
 	    seq += 1;
 	    response = read_packet(port);
 	    match response {
-		None => crate::helpers::error_handler(
-		    "Error: got no or invalid response for data (\"D\") packet. Try sending again.".to_string()),
+		None => {
+		    bar.abandon();
+		    crate::helpers::error_handler(
+			"Error: got no or invalid response for data (\"D\") packet. Try sending again.".to_string());
+		},
 		_ => {
 		    if response.unwrap().ptype != 'Y' as u8 {
+			bar.abandon();
 			crate::helpers::error_handler(
 			    "Error: no ACK for data (\"D\") packet. Try sending again.".to_string());
 		    }
@@ -297,6 +323,7 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	    packet_data = Vec::new();
 	}
     }
+    bar.println(format!("bytes_added is {:x?}", bytes_added));
     if bytes_added != 0 {
 	let p = KermitPacket {
 	    len: tochar(bytes_added as u8 + 3),
@@ -304,19 +331,27 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	    ptype: 'D' as u8,
 	    data: packet_data,
 	}.to_vec();
+	//bar.finish();
 	// still bytes left but the packet is shorter
-
+	bar.println(format!("p out of loop is {:x?}", p));
 	match port.write(&p) {
     	    Ok(_) => {},
-	    Err(e) => crate::helpers::error_handler(format!("Error: failed to write final data packet: {:?}", e)),
+	    Err(e) => {
+		bar.abandon();
+		crate::helpers::error_handler(format!("Error: failed to write final data packet: {:?}", e));
+	    },
 	}
 	seq += 1;
 	response = read_packet(port);
 	match response {
-	    None => crate::helpers::error_handler(
-		"Error: got no or invalid response for final data (\"D\") packet. Try sending again.".to_string()),
+	    None => {
+		bar.abandon();
+		crate::helpers::error_handler(
+		    "Error: got no or invalid response for final data (\"D\") packet. Try sending again.".to_string());
+	    }
 	    _ => {
 		if response.unwrap().ptype != 'Y' as u8 {
+		    bar.abandon();
 		    crate::helpers::error_handler(
 			"Error: no ACK for final data (\"D\") packet. Try sending again.".to_string());
 		}
@@ -327,18 +362,25 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
     let z_packet = make_generic_packet(&mut seq, 'Z');
     match port.write(&z_packet) {
     	Ok(_) => {},
-	Err(e) => crate::helpers::error_handler(
-	    format!("Error: failed to write \"Z\" (end-of-file) packet: {:?}", e)),
+	Err(e) => {
+	    bar.abandon();
+	    crate::helpers::error_handler(
+		format!("Error: failed to write \"Z\" (end-of-file) packet: {:?}", e));
+	},
     }
-    
-    println!("response: {:x?}", read_packet(port));
+
+    // needed to make sure the calculator gets its packets
+    std::thread::sleep(std::time::Duration::from_millis(300));
     
     let b_packet = make_generic_packet(&mut seq, 'B');
     match port.write(&b_packet) {
     	Ok(_) => {},
-	Err(e) => crate::helpers::error_handler(
-	    format!("Error: failed to write \"B\" (end-of-transmission) packet: {:?}", e)),
+	Err(e) => {
+	    bar.abandon();
+	    crate::helpers::error_handler(
+		format!("Error: failed to write \"B\" (end-of-transmission) packet: {:?}", e));
+	},
+	    
     }
-    
-    println!("response: {:x?}", read_packet(port));
+    bar.finish();
 }
