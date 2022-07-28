@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 use std::fmt;
 
-// TODO: Check lengths of vectors before reading
-
 // TODO: This failed for CAL, I don't know why.
 
+// TODO: error handling sucks. when things fail, we almost exclusively panic.
 fn calc_crc(crc: u32, nibble: u8) -> u32 {
     return (crc >> 4) ^ (((crc ^ nibble as u32) & 0xFu32) * 0x1081u32);
 }
@@ -33,6 +32,7 @@ impl fmt::Display for ObjectInfo {
 }
 
 fn prolog_to_length(prolog: u32) -> Option<LengthState> {
+    //println!("prolog is {:x?}", prolog);
     //        DOBINT  DOREAL  DOEREL  DOCMP   DOECMP  DOCHAR  DOROMP
     for i in [0x2911, 0x2933, 0x2955, 0x2977, 0x299d, 0x29bf, 0x29e2] {
 	if prolog == i {
@@ -140,8 +140,13 @@ fn calc_object_size(nibs: &Vec<u8>) -> Option<u32> {
 	    Some(LengthState::DirNext) => read_dir_size(&nibs),
 	    Some(LengthState::Fixed) => prolog_to_fixed_length(prolog),
 	    Some(LengthState::FindEndMarker) => read_size_to_end_marker(&nibs),
-	    None => return None,
+	    // I don't think this is doing what we want
+	    None => return None,//Some(3),
 	};
+	match object_length {
+	    None => return None,
+	    _ => {},
+	}
 	return Some(5u32 + object_length.unwrap());
     }
 }
@@ -170,20 +175,24 @@ fn read_ascix_size(nibs: &Vec<u8>) -> Option<u32> {
 
     let ascix_char_len = (nibs[1] << 4) + nibs[0];
     let ascix_region_len = 2 + (ascix_char_len*2) + 2;
-
+    //println!("{ascix_region_len}");
     // slice then reconvert to Vec
     // Start at nibble 2 (first length), add ascii data len, then second length.
     // ascix_len is in bytes, because characters are bytes, so we multiply by 2 to get nibbles
     let inner_nibbles = nibs[ascix_region_len as usize..].to_vec();
-    let inner_region = calc_object_size(&inner_nibbles).unwrap();
-
-    return Some(inner_region + ascix_region_len as u32);
+    //println!("{:x?}", inner_nibbles);
+    let inner_region = calc_object_size(&inner_nibbles);
+    match inner_region {
+	None => return None,
+	_ => {},
+    }
+    return Some(inner_region.unwrap() + ascix_region_len as u32);
     
 }
 
 
 fn read_size_to_end_marker(nibs: &Vec<u8>) -> Option<u32> {
-    println!("read_size_to_end_marker, nibs is {:x?}", nibs);
+    //println!("read_size_to_end_marker, nibs is {:x?}", nibs);
     let mut mem_addr = 0u32; // address in Saturn memory, 5 nibbles
     for (pos, i) in nibs.iter().enumerate() {
 	mem_addr <<= 4;
@@ -228,6 +237,10 @@ fn read_dir_size(nibs: &Vec<u8>) -> Option<u32> {
     // name followed by the contents of the object.
     while index < nibs.len() - 18 {
 	let ascix_size = read_ascix_size(&nibs[index..].to_vec());
+	match ascix_size {
+	    None => return None,
+	    _ => {},
+	}
 	index += ascix_size.unwrap() as usize;
 	index += 5; // 5 nibble offset value after each object
 	//println!("  ascix_size: {:?}", ascix_size);
@@ -326,7 +339,7 @@ fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
 pub fn crc_and_output(path: &PathBuf) {
     let object_info = crc_file(path);
     if object_info.is_none() {
-	println!("File is not an HP object");
+	println!("File is not an HP object or is corrupt");
     } else {
 	println!("{}", object_info.unwrap());
     }

@@ -338,10 +338,7 @@ fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
 // function name. The server always sends 128-byte packets even if the
 // file is big enough for 1K XModem.
 
-// TODO: this needs to remote the extra bytes at the end of the
-// file. I think we can do this by looking for zeros that stretch to
-// the end of the packet, in the last packet
-
+// TODO: could we use an indeterminate progress bar?
 pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool, overwrite: &bool, finish: &bool) {
     let mut file = match overwrite {
 	true => File::create(path).unwrap(),
@@ -461,8 +458,9 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	let index = file_contents.len() - 1 - pos;
 	//println!("{last_index}, {index}");
 	if *c != 0 {
-	    final_zero = index;
-	    println!("found non-zero at {index}");
+	    // add 1 because index is non-zero, and we need to start from a zero byte.
+	    final_zero = index + 1;
+	    //println!("found non-zero at {index}");
 	    break;
 	}
     }
