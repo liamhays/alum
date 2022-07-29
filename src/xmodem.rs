@@ -340,6 +340,7 @@ fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
 
 // TODO: could we use an indeterminate progress bar?
 pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool, overwrite: &bool, finish: &bool) {
+
     let mut file = match overwrite {
 	true => File::create(path).unwrap(),
 	false => {
@@ -363,6 +364,9 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	}
     };
 
+    let pb = crate::helpers::get_spinner(
+	format!("Receiving {:?}...", path.file_name().unwrap()));
+    
     // We'll push to a Vec<u8>, then write to the file.
     let mut file_contents: Vec<u8> = Vec::new();
 
@@ -481,5 +485,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     if *finish {
 	finish_server(port);
     }
+
+    pb.finish();
     
 }

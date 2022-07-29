@@ -38,3 +38,41 @@ pub fn get_progress_bar(len: u64, label: std::string::String) -> ProgressBar {
     return pb;
 }
 
+
+pub fn get_spinner(label: std::string::String) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_bar()
+	    .template("{spinner:} {msg}")
+	    // I like this spinner. It's reminiscent of systemd and very readable.
+            .tick_strings(&[
+		"[=     ]",
+		"[==    ]",
+		"[===   ]",
+		"[ ===  ]",
+		"[  === ]",
+		"[   ===]",
+		"[    ==]",
+		"[     =]",
+		"[    ==]",
+		"[   ===]",
+		"[  === ]",
+		"[ ===  ]",
+		"[===   ]",
+		"[==    ]",
+		"[=     ]",
+
+            ]),
+    );
+    	
+    pb.set_message(label);
+    pb.enable_steady_tick(120); // in ms
+    /*
+
+    thread::sleep(Duration::from_secs(1));
+    pb.finish_with_message("Receiving file 'REMOTE'...done!");
+    println!("File info: ");
+     */
+    return pb;
+
+}

@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::ffi::OsStr;
 
 use serialport;
+use indicatif::ProgressBar;
 
 const SOH: u8 = 0x01;
 const CR: u8 = 0x0d;
@@ -81,25 +82,26 @@ fn block_check_1(data: Vec<u8>) -> u8 {
 }
 
 // Make an S packet and increment `seq`.
+
+// We are emulating a very basic Kermit: only type 1 block check and a
+// couple commands.
 fn make_s_packet(seq: &mut u32) -> Vec<u8> {
     // "S" packet is Send-Init, and establishes connection schema.
     
     // The LEN field must be correct, or the calculator will do
     // exactly nothing when we send a packet.
-    let mut packet_data: Vec<u8> = Vec::new();
-    
-    packet_data.push(tochar(94)); // MAXL (max packet length), this is default
-    packet_data.push(tochar(2)); // TIME (timeout), this is rounded up from serial port timeout
-    packet_data.push(tochar(0)); // NPAD (number of padding chars), not needed here
-    packet_data.push(ctl(0)); // PADC (padding char), N/A because NPAD = 0
-    packet_data.push(tochar(CR)); // EOL (end of packet char), CR is the default
-    // The following two fields are optional, but the HP 48 sends them.
-    packet_data.push('#' as u8); // QCTL (quote control char), '#' is the default
-    // QBIN (ASCII char used to quote for 8th bit set), Y means I
-    // agree but don't need it. HP 48 sends ' ', meaning no 8-bit
-    // quoting
-    packet_data.push('Y' as u8);
-    packet_data.push('1' as u8); // CHKT (check type), we only support type 1
+    let packet_data: Vec<u8> = vec![
+	// MAXL     TIME       NPAD       PADC    EOL         QCTL       QBIN       CHKT
+	tochar(94), tochar(2), tochar(0), ctl(0), tochar(CR), '#' as u8, 'Y' as u8, '1' as u8];
+
+    // extra info on these fields.
+    // PADC is ctl(0) because NPAD (number of padding chars) is also zero.
+    // EOL is CR, the default
+    //   - the HP 48 sends QCTL, QBIN, and CHKT, so we do too.
+    // QCTL: '#' is default
+    // QBIN: ASCII char used to quote for 8th bit set, we use 'Y' to
+    // say "I agree to what you want but don't need 8-bit quoting".
+    // CHKT: check type, we only support type 1.
 
     let s_packet = KermitPacket {
 	len: tochar(11),
@@ -199,10 +201,40 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Option<KermitPacke
     return Some(packet);
 }
 
-
+// This function will exit the entire program on error.
+fn send_packet(p: Vec<u8>, seq: &mut u32, bar: &ProgressBar, port: &mut Box<dyn serialport::SerialPort>) {
+    // still bytes left but the packet is shorter
+    //bar.println(format!("p out of loop is {:x?}", p));
+    match port.write(&p) {
+    	Ok(_) => {},
+	Err(e) => {
+	    bar.abandon();
+	    crate::helpers::error_handler(format!("Error: failed to write final data packet: {:?}", e));
+	},
+    }
+    *seq += 1;
+    let response = read_packet(port);
+    match response {
+	None => {
+	    bar.abandon();
+	    crate::helpers::error_handler(
+		"Error: got no or invalid response for final data (\"D\") packet. Try sending again.".to_string());
+	}
+	_ => {
+	    if response.unwrap().ptype != 'Y' as u8 {
+		bar.abandon();
+		crate::helpers::error_handler(
+		    "Error: no ACK for final data (\"D\") packet. Try sending again.".to_string());
+	    }
+	},
+    }
+}
 
 // TODO: a lot of binary files don't work sent with this.
+
 // TODO: finish server command
+
+// TODO: this doesn't work with x48 at full speed
 
 // See the top of this file for what this function actually
 // does. There are a lot of match statements, but it's how I catch
@@ -212,8 +244,6 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 
     let bar = crate::helpers::get_progress_bar(file_contents.len() as u64, "bytes".to_string());
     
-    // We are emulating a very basic Kermit: only type 1 block check
-    // and a couple commands.
     let mut seq = 0u32;
 
     let s_packet = make_s_packet(&mut seq);
@@ -276,6 +306,14 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	    packet_data.push('#' as u8);
 	    packet_data.push(ctl(c));
 	    bytes_added += 2;
+	} else if low_7bits == '#' as u8 {
+	    // It might seem that we would want to check if c is '#',
+	    // but the manual specifically says to consider only the 7
+	    // low bits to check if a character is the prefix
+	    // character.
+	    packet_data.push('#' as u8);
+	    packet_data.push('#' as u8);
+	    bytes_added += 2;
 	} else {
 	    packet_data.push(c);
 	    bytes_added += 1;
@@ -283,8 +321,8 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	bar.inc(1);
 	// The whole control prefix issue means that the packet length
 	// can change. 83 is the minimum number of bytes in the data
-	// field.
-	if bytes_added > 83 {
+	// field that our packets will have.
+	if bytes_added > 84 {
 	    //println!("bytes_added is {:?}", bytes_added);
 
 	    let p = KermitPacket {
@@ -294,31 +332,7 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 		data: packet_data,
 	    }.to_vec();
 
-	    match port.write(&p) {
-    		Ok(_) => {},
-		Err(e) => {
-		    bar.abandon();
-		    crate::helpers::error_handler(
-			format!("Error: failed to write data (\"D\") packet: {:?}", e));
-		},
-	    }
-	    
-	    seq += 1;
-	    response = read_packet(port);
-	    match response {
-		None => {
-		    bar.abandon();
-		    crate::helpers::error_handler(
-			"Error: got no or invalid response for data (\"D\") packet. Try sending again.".to_string());
-		},
-		_ => {
-		    if response.unwrap().ptype != 'Y' as u8 {
-			bar.abandon();
-			crate::helpers::error_handler(
-			    "Error: no ACK for data (\"D\") packet. Try sending again.".to_string());
-		    }
-		},
-	    }
+	    send_packet(p, &mut seq, &bar, port);
 	    bytes_added = 0;
 	    packet_data = Vec::new();
 	}
@@ -331,32 +345,7 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	    ptype: 'D' as u8,
 	    data: packet_data,
 	}.to_vec();
-	//bar.finish();
-	// still bytes left but the packet is shorter
-	bar.println(format!("p out of loop is {:x?}", p));
-	match port.write(&p) {
-    	    Ok(_) => {},
-	    Err(e) => {
-		bar.abandon();
-		crate::helpers::error_handler(format!("Error: failed to write final data packet: {:?}", e));
-	    },
-	}
-	seq += 1;
-	response = read_packet(port);
-	match response {
-	    None => {
-		bar.abandon();
-		crate::helpers::error_handler(
-		    "Error: got no or invalid response for final data (\"D\") packet. Try sending again.".to_string());
-	    }
-	    _ => {
-		if response.unwrap().ptype != 'Y' as u8 {
-		    bar.abandon();
-		    crate::helpers::error_handler(
-			"Error: no ACK for final data (\"D\") packet. Try sending again.".to_string());
-		}
-	    },
-	}
+	send_packet(p, &mut seq, &bar, port);
     }
     
     let z_packet = make_generic_packet(&mut seq, 'Z');
