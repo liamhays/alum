@@ -152,7 +152,7 @@ fn make_generic_packet(seq: &mut u32, ptype: char) -> Vec<u8> {
     return p.to_vec();
 }
 
-// TODO: should use Result instead of Option
+// eventual todo: should use Result instead of Option
 fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Option<KermitPacket> {
     // have to sleep, probably because the calculator is slow
     std::thread::sleep(std::time::Duration::from_millis(300));
@@ -202,17 +202,16 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Option<KermitPacke
 }
 
 // This function will exit the entire program on error.
-fn send_packet(p: Vec<u8>, seq: &mut u32, bar: &ProgressBar, port: &mut Box<dyn serialport::SerialPort>) {
+fn send_packet(p: KermitPacket, bar: &ProgressBar, port: &mut Box<dyn serialport::SerialPort>) {
     // still bytes left but the packet is shorter
     //bar.println(format!("p out of loop is {:x?}", p));
-    match port.write(&p) {
+    match port.write(&p.to_vec()) {
     	Ok(_) => {},
 	Err(e) => {
 	    bar.abandon();
 	    crate::helpers::error_handler(format!("Error: failed to write final data packet: {:?}", e));
 	},
     }
-    *seq += 1;
     let response = read_packet(port);
     match response {
 	None => {
@@ -230,74 +229,13 @@ fn send_packet(p: Vec<u8>, seq: &mut u32, bar: &ProgressBar, port: &mut Box<dyn 
     }
 }
 
-// TODO: a lot of binary files don't work sent with this.
-
-// TODO: finish server command
-
-// TODO: this doesn't work with x48 at full speed
-
-// See the top of this file for what this function actually
-// does. There are a lot of match statements, but it's how I catch
-// serial port and protocol errors.
-pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
-    let file_contents = crate::helpers::get_file_contents(path);
-
-    let bar = crate::helpers::get_progress_bar(file_contents.len() as u64, "bytes".to_string());
-    
-    let mut seq = 0u32;
-
-    let s_packet = make_s_packet(&mut seq);
-    match port.write(&s_packet) {
-	Ok(_) => {},
-	Err(e) => {
-	    // abondon() leaves the progress bar in place, finish() clears it.
-	    bar.abandon();
-	    crate::helpers::error_handler(format!("Error: failed to write \"S\" packet: {:?}", e));
-	},
-    }
-    let mut response = read_packet(port);
-    match response {
-	None => {
-	    bar.abandon();
-	    crate::helpers::error_handler(
-		"Error: got no or invalid response for \"S\" packet".to_string());
-	},
-	_ => {
-	    if response.unwrap().ptype != 'Y' as u8 {
-		bar.abandon();
-		crate::helpers::error_handler("Error: no ACK for \"S\" packet. Try sending again.".to_string());
-	    }
-	},
-    }
-    
-    let f_packet = make_f_packet(&mut seq, path.file_name().unwrap());
-    match port.write(&f_packet) {
-    	Ok(_) => {},
-	Err(e) => {
-	    bar.abandon();
-	    crate::helpers::error_handler(format!("Error: failed to write \"F\" packet: {:?}", e));
-	}
-    }
-    response = read_packet(port);
-    match response {
-	None => {
-	    bar.abandon();
-	    crate::helpers::error_handler(
-		"Error: got no or invalid response for \"F\" packet: {:?}".to_string());
-	}
-	_ => {
-	    if response.unwrap().ptype != 'Y' as u8 {
-		bar.abandon();
-		crate::helpers::error_handler("Error: no ACK for \"F\" packet. Try sending again.".to_string());
-	    }
-	},
-    }
-
-
+// Make a Vec of KermitPackets from the contents of the file, specified in `f`.
+fn make_packet_list(f: Vec<u8>, seq: &mut u32) -> Vec<KermitPacket> {
+    let mut packet_list: Vec<KermitPacket> = Vec::new();
     let mut packet_data: Vec<u8> = Vec::new();
     let mut bytes_added = 0u32;
     
-    for c in file_contents {
+    for c in f {
 	// Kermit specification says that any byte whose low 7 bits
 	// form a control character must be changed to the control
 	// prefix char (in this case '#') followed by ctl(byte).
@@ -310,48 +248,110 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	    // It might seem that we would want to check if c is '#',
 	    // but the manual specifically says to consider only the 7
 	    // low bits to check if a character is the prefix
-	    // character.
+	    // character. However, we still have to push all 8 bits
+	    // onto the packet afterward.
 	    packet_data.push('#' as u8);
-	    packet_data.push('#' as u8);
+	    packet_data.push(c);
 	    bytes_added += 2;
 	} else {
 	    packet_data.push(c);
 	    bytes_added += 1;
 	}
-	bar.inc(1);
+
 	// The whole control prefix issue means that the packet length
-	// can change. 83 is the minimum number of bytes in the data
+	// can change. 84 is the minimum number of bytes in the data
 	// field that our packets will have.
 	if bytes_added > 84 {
-	    //println!("bytes_added is {:?}", bytes_added);
-
-	    let p = KermitPacket {
+	    packet_list.push(KermitPacket {
 		len: tochar(bytes_added as u8 + 3),
-		seq: tochar((seq as u8) % 64),
+		seq: tochar((*seq as u8) % 64),
 		ptype: 'D' as u8,
 		data: packet_data,
-	    }.to_vec();
+	    });
 
-	    send_packet(p, &mut seq, &bar, port);
+	    *seq += 1;
 	    bytes_added = 0;
 	    packet_data = Vec::new();
 	}
     }
-    bar.println(format!("bytes_added is {:x?}", bytes_added));
+    //bar.println(format!("bytes_added is {:x?}", bytes_added));
     if bytes_added != 0 {
-	let p = KermitPacket {
+	packet_list.push(KermitPacket {
 	    len: tochar(bytes_added as u8 + 3),
-	    seq: tochar((seq as u8) % 64),
+	    seq: tochar((*seq as u8) % 64),
 	    ptype: 'D' as u8,
 	    data: packet_data,
-	}.to_vec();
-	send_packet(p, &mut seq, &bar, port);
+	});
+	*seq += 1;
+    }
+    return packet_list;
+}
+
+// TODO: This is closer, but fixit (for example) isn't sent
+// correctly. It's coming down to the issues with when a character is
+// the control prefix: for example, 0xa3 is '#' with the high bit
+// set. We're sending just '#' and should probably send the whole
+// byte.
+
+// TODO: finish server command
+
+// TODO: this doesn't work with x48 at full speed
+
+// See the top of this file for what this function actually
+// does. There are a lot of match statements, but it's how I catch
+// serial port and protocol errors.
+pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
+    let mut seq = 0u32;
+    
+    let file_contents = crate::helpers::get_file_contents(path);
+
+    
+
+
+    let s_packet = make_s_packet(&mut seq);
+    match port.write(&s_packet) {
+	Ok(_) => {},
+	Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"S\" packet: {:?}", e)),
+    }
+    let mut response = read_packet(port);
+    match response {
+	None => crate::helpers::error_handler("Error: got no or invalid response for \"S\" packet.".to_string()),
+	_ => {
+	    if response.unwrap().ptype != 'Y' as u8 {
+		crate::helpers::error_handler("Error: no ACK for \"S\" packet. Try sending again.".to_string());
+	    }
+	},
     }
     
+    let f_packet = make_f_packet(&mut seq, path.file_name().unwrap());
+    match port.write(&f_packet) {
+    	Ok(_) => {},
+	Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"F\" packet: {:?}", e)),
+    }
+    response = read_packet(port);
+    match response {
+	None => crate::helpers::error_handler("Error: got no or invalid response for \"F\" packet.".to_string()),
+
+	_ => {
+	    if response.unwrap().ptype != 'Y' as u8 {
+		crate::helpers::error_handler("Error: no ACK for \"F\" packet. Try sending again.".to_string());
+	    }
+	},
+    }
+
+    let packet_list = make_packet_list(file_contents, &mut seq);
+    let bar = crate::helpers::get_progress_bar(packet_list.len() as u64);
+    
+    for p in packet_list {
+	send_packet(p, &bar, port);
+	bar.inc(1);
+    }
+    bar.println(format!("seq is {seq}"));
     let z_packet = make_generic_packet(&mut seq, 'Z');
     match port.write(&z_packet) {
     	Ok(_) => {},
 	Err(e) => {
+	    // abondon() leaves the progress bar in place, finish() clears it.
 	    bar.abandon();
 	    crate::helpers::error_handler(
 		format!("Error: failed to write \"Z\" (end-of-file) packet: {:?}", e));

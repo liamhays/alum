@@ -214,7 +214,7 @@ fn wait_for_char(port: &mut Box<dyn serialport::SerialPort>, ack_char: u8) -> u8
 
 // The way packets are sent and responses are handled don't change.
 fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::SerialPort>) {
-    let pb = crate::helpers::get_progress_bar(packet_list.len() as u64, "packets".to_string());
+    let pb = crate::helpers::get_progress_bar(packet_list.len() as u64);
     
     for (pos, packet) in packet_list.iter().enumerate() {
 	let mut retry_count = 0;
@@ -337,8 +337,6 @@ fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
 // 128-byte packets sent with XModem Server are 132 bytes, hence the
 // function name. The server always sends 128-byte packets even if the
 // file is big enough for 1K XModem.
-
-// TODO: could we use an indeterminate progress bar?
 pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool, overwrite: &bool, finish: &bool) {
 
     let mut file = match overwrite {

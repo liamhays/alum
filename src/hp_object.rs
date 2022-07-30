@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 use std::fmt;
 
-// TODO: This failed for CAL, I don't know why.
+
+// may still not be true, but it did fail for fixit
 
 // TODO: error handling sucks. when things fail, we almost exclusively panic.
 fn calc_crc(crc: u32, nibble: u8) -> u32 {
@@ -71,26 +72,26 @@ fn prolog_to_length(prolog: u32) -> Option<LengthState> {
     return None;
 }
 
+/**** Each prolog decoder returns a size including the prolog. ****/
+
 // This does not need to have Option because prolog_to_length already checks for all these prologs.
 fn prolog_to_fixed_length(prolog: u32) -> Option<u32> {
     //println!("prolog to fixed length");
-    // We subtract the length of the prolog from these because it's
-    // added in later.
     match prolog {
 	// DOBINT
-	0x2911 => Some(10 - 5),
+	0x2911 => Some(10),
 	// DOREAL
-	0x2933 => Some(21 - 5),
+	0x2933 => Some(21),
 	// DOEREL
-	0x2955 => Some(26 - 5),
+	0x2955 => Some(26),
 	// DOCMP
-	0x2977 => Some(37 - 5),
+	0x2977 => Some(37),
 	// DOECMP
-	0x299d => Some(47 - 5),
+	0x299d => Some(47),
 	// DOCHAR
-	0x29bf => Some(7 - 5),
+	0x29bf => Some(7),
 	// DOROMP
-	0x2e92 => Some(11 - 5),
+	0x2e92 => Some(11),
 	// should never happen
 	_ => None,
     }
@@ -98,15 +99,17 @@ fn prolog_to_fixed_length(prolog: u32) -> Option<u32> {
 	    
 fn read_size(nibs: &Vec<u8>) -> Option<u32> {
     // We have to go at least 10 nibbles in; if the object is less
-    // than that then something is wrong.
+    // than that, something is wrong.
     if nibs.len() < 10 {
 	return None;
     }
+    
     let mut length = 0u32;
     for i in (5..10).rev() {
 	length <<= 4;
 	length |= nibs[i] as u32;
     }
+    //println!("object is {:x?}", &nibs[0..length as usize + 5]);
     // Must include prolog nibbles in this checksum
     return Some(length + 5u32);
 }
@@ -134,31 +137,32 @@ fn calc_object_size(nibs: &Vec<u8>) -> Option<u32> {
 	// We didn't recognize the tagged object in the file
 	return None;
     } else {
+	// This length includes the prolog.
 	let object_length = match object_length_type {
 	    Some(LengthState::SizeNext) => read_size(&nibs),
 	    Some(LengthState::ASCICNext) => read_ascic_size(&nibs),
 	    Some(LengthState::DirNext) => read_dir_size(&nibs),
 	    Some(LengthState::Fixed) => prolog_to_fixed_length(prolog),
 	    Some(LengthState::FindEndMarker) => read_size_to_end_marker(&nibs),
-	    // I don't think this is doing what we want
-	    None => return None,//Some(3),
+	    None => return None,
 	};
+	//println!("object_length is {:?}", object_length);
 	match object_length {
 	    None => return None,
 	    _ => {},
 	}
-	return Some(5u32 + object_length.unwrap());
+	// We shouldn't probably be adding 5 here.
+	return Some(object_length.unwrap());// + 5u32);
     }
 }
 
 fn read_ascic_size(nibs: &Vec<u8>) -> Option<u32> {
-    //println!("read ascic size");
+    println!("read ascic size");
     // ASCIC size is encoded as a byte (so up to 255 characters). We
     // then need to go get more size, by reading the object that
     // follows the ASCIC data.
     let ascic_char_len = (nibs[1] << 4) + nibs[0];
     let ascic_region_len = 2 + ascic_char_len * 2; // nibbles
-
     // slice then reconvert to Vec
     let inner_nibbles = nibs[ascic_region_len as usize..].to_vec();
 
@@ -169,16 +173,23 @@ fn read_ascic_size(nibs: &Vec<u8>) -> Option<u32> {
 }
 
 fn read_ascix_size(nibs: &Vec<u8>) -> Option<u32> {
-    //println!("read ascix size");
+    //println!("read_ascix_size, nibs is {:x?}, nibs.len() is {:?}", nibs, nibs.len());
     // ASCIX consists of <1 byte length, ASCII data, same 1 byte
     // length>. It's almost identical to ASCIC.
 
+    
     let ascix_char_len = (nibs[1] << 4) + nibs[0];
     let ascix_region_len = 2 + (ascix_char_len*2) + 2;
-    //println!("{ascix_region_len}");
+    /*let mut ascix_text: Vec<char> = Vec::new();
+    println!("ascix_char_len is {ascix_char_len}, ascix_region_len is {ascix_region_len}");
+    for i in (2..2 + ascix_char_len as usize * 2).step_by(2) {
+	let mut b = nibs[i+1];
+	b <<= 4;
+	b |= nibs[i];
+	ascix_text.push(b as char);
+    }
+    println!("ascix_text is {:?}", ascix_text);*/
     // slice then reconvert to Vec
-    // Start at nibble 2 (first length), add ascii data len, then second length.
-    // ascix_len is in bytes, because characters are bytes, so we multiply by 2 to get nibbles
     let inner_nibbles = nibs[ascix_region_len as usize..].to_vec();
     //println!("{:x?}", inner_nibbles);
     let inner_region = calc_object_size(&inner_nibbles);
@@ -186,6 +197,7 @@ fn read_ascix_size(nibs: &Vec<u8>) -> Option<u32> {
 	None => return None,
 	_ => {},
     }
+    //println!("inner_region is {:?} nibbles, {:?} bytes", inner_region.unwrap(), inner_region.unwrap() / 2);
     return Some(inner_region.unwrap() + ascix_region_len as u32);
     
 }
@@ -234,7 +246,8 @@ fn read_dir_size(nibs: &Vec<u8>) -> Option<u32> {
     let mut index = 18usize;
 
     // At 18 nibbles in, the first object is defined with an ASCIX
-    // name followed by the contents of the object.
+    // name followed by the contents of the object. Every following
+    // object is also an ASCIX name followed by the object's contents.
     while index < nibs.len() - 18 {
 	let ascix_size = read_ascix_size(&nibs[index..].to_vec());
 	match ascix_size {
@@ -246,12 +259,13 @@ fn read_dir_size(nibs: &Vec<u8>) -> Option<u32> {
 	//println!("  ascix_size: {:?}", ascix_size);
     }
 
-    // Subtract the value of two object offsets, because we skip past
-    // the first one at the start (in the 18 nibbles in), and the very
-    // last object in the directory has no offset.
+    // Subtract 5 nibbles, because the very last object in the
+    // directory has no offset.
+    
     // Directory objects don't include object counts, so this is
     // really the best way to do this.
-    return Some(index as u32 - 5 - 5);
+    //println!("index before return is {:?}", index);
+    return Some(index as u32 - 5);
 }
 
 // A real number (and possibly other types) gives different checksums
@@ -320,8 +334,11 @@ fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
     // object_length, so we can iterate from the start to that many
     // nibbles.
     let mut crc = 0u32;
-
+    //println!("nibble length is {:?}, nibs.len() is {:?}", object_length.unwrap(), nibbles.len());
+    //println!("nibbles is {:x?}", nibbles);
     for nibble in &nibbles[0..object_length.unwrap() as usize] {
+	// TODO: maybe use a reference for `crc` or something
+	//println!("nibble is {:x?}", *nibble);
 	crc = calc_crc(crc, *nibble);
     }
 

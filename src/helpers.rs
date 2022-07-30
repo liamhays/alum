@@ -26,14 +26,14 @@ pub fn div_up(a: usize, b: usize) -> usize {
     (0..a).step_by(b).size_hint().0
 }
 
-pub fn get_progress_bar(len: u64, label: std::string::String) -> ProgressBar {
+pub fn get_progress_bar(len: u64) -> ProgressBar {
     let pb = ProgressBar::new(len);
     pb.set_style(ProgressStyle::default_bar()
 		 // spaces don't matter in this fromat string
 		 
 		 // wide_bar means expand to fill space, :2 means
 		 // surround with 2 spaces (I think).
-		 .template(format!("{{wide_bar}} {{pos:>2}}/{{len:2}} {label} ({{percent}}%)").as_str())
+		 .template(format!("{{wide_bar}} {{pos:>2}}/{{len:2}} packets ({{percent}}%)").as_str())
 		 .progress_chars("##-"));
     return pb;
 }
