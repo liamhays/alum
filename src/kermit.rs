@@ -81,11 +81,11 @@ fn block_check_1(data: Vec<u8>) -> u8 {
     return tochar((s + ((s & 192) / 64) & 63) as u8);
 }
 
-// Make an S packet and increment `seq`.
+// Make an S (or any packet type specified in ptype) packet and increment `seq`.
 
 // We are emulating a very basic Kermit: only type 1 block check and a
 // couple commands.
-fn make_s_packet(seq: &mut u32) -> Vec<u8> {
+fn make_init_packet(seq: &mut u32, ptype: char) -> Vec<u8> {
     // "S" packet is Send-Init, and establishes connection schema.
     
     // The LEN field must be correct, or the calculator will do
@@ -106,7 +106,7 @@ fn make_s_packet(seq: &mut u32) -> Vec<u8> {
     let s_packet = KermitPacket {
 	len: tochar(11),
 	seq: tochar((*seq as u8) % 64),
-	ptype: 'S' as u8,
+	ptype: ptype as u8,
 	data: packet_data,
     };
     
@@ -287,12 +287,6 @@ fn make_packet_list(f: Vec<u8>, seq: &mut u32) -> Vec<KermitPacket> {
     return packet_list;
 }
 
-// TODO: This is closer, but fixit (for example) isn't sent
-// correctly. It's coming down to the issues with when a character is
-// the control prefix: for example, 0xa3 is '#' with the high bit
-// set. We're sending just '#' and should probably send the whole
-// byte.
-
 // TODO: finish server command
 
 // TODO: this doesn't work with x48 at full speed
@@ -300,15 +294,12 @@ fn make_packet_list(f: Vec<u8>, seq: &mut u32) -> Vec<KermitPacket> {
 // See the top of this file for what this function actually
 // does. There are a lot of match statements, but it's how I catch
 // serial port and protocol errors.
-pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
+pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, finish: bool) {
     let mut seq = 0u32;
     
     let file_contents = crate::helpers::get_file_contents(path);
-
     
-
-
-    let s_packet = make_s_packet(&mut seq);
+    let s_packet = make_init_packet(&mut seq, 'S');
     match port.write(&s_packet) {
 	Ok(_) => {},
 	Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"S\" packet: {:?}", e)),
@@ -369,7 +360,27 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	    crate::helpers::error_handler(
 		format!("Error: failed to write \"B\" (end-of-transmission) packet: {:?}", e));
 	},
-	    
     }
     bar.finish();
+
+    if finish {
+	// "I" packet is identical to "S" except for the packet type.
+	let i_packet = make_init_packet(&mut seq, 'I');
+	match port.write(&i_packet) {
+	    Ok(_) => {},
+	    Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"I\" packet: {:?}", e)),
+	}
+	// could wait for ack but probably don't need to.
+	std::thread::sleep(std::time::Duration::from_millis(300));
+	// note: sending the I packet resets the seq number.
+	
+	// we are sending a 'G' packet with 'F' in the data field,
+	// which tells the server to finish.
+	let f_packet = vec![SOH, 0x24, tochar(0), 'G' as u8, 'F' as u8, 0x34, CR]; // hardcoded CRC
+	match port.write(&f_packet) {
+	    Ok(_) => {},
+	    Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"GF\" packet: {:?}", e)),
+	}
+	
+    }
 }

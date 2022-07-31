@@ -333,6 +333,13 @@ fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
     return cmd_packet;
 }
 
+// The directory `fixit` ends with an INTENTIONAL 0x00 byte. What does
+// the XModem server do with it?
+
+// The XModem server breaks it as well. The 0x00 byte is replaced with
+// 0x30 (who knows why...), and sending the same file to the
+// calculator maintains the 0x30 byte, which is incorrect. Moral of
+// the story: check the checksums if you use XModem.
 
 // 128-byte packets sent with XModem Server are 132 bytes, hence the
 // function name. The server always sends 128-byte packets even if the

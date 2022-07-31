@@ -64,7 +64,7 @@ enum Commands {
 	direct: bool,
     },
 
-    /// Get file from Kermit server
+    /*/// Get file from Kermit server
     Kget {
 	#[clap(parse(from_os_str))]
 	path: std::path::PathBuf,
@@ -72,7 +72,7 @@ enum Commands {
 	/// Overwrite pre-existing file on computer if necessary
 	#[clap(short, long, action, default_value_t = false)]
 	overwrite: bool,
-    },
+    },*/
 
     /// Get file from XModem server
     Xget {
@@ -162,15 +162,15 @@ fn main() {
 
 	Commands::Ksend { path } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
-	    println!("Ksend, path = {:?}", path);
-	    kermit::send_file(path, &mut port);
+	    println!("Ksend, path = {:?}, finish = {:?}", path, cli.finish);
+	    kermit::send_file(path, &mut port, cli.finish);
 
 	},
-
-	Commands::Kget { path, overwrite } => {
+	// I am not implementing kermit receive right now. No.
+	/*Commands::Kget { path, overwrite } => {
 	    //let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Kget, path = {:?}, overwrite = {:?}", path, overwrite);
-	},
+	},*/
 
 	Commands::Info { path } => {
 	    println!("Info mode, path = {:?}", path);

@@ -1,10 +1,6 @@
 use std::path::PathBuf;
 use std::fmt;
 
-
-// may still not be true, but it did fail for fixit
-
-// TODO: error handling sucks. when things fail, we almost exclusively panic.
 fn calc_crc(crc: u32, nibble: u8) -> u32 {
     return (crc >> 4) ^ (((crc ^ nibble as u32) & 0xFu32) * 0x1081u32);
 }
