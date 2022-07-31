@@ -209,7 +209,7 @@ fn send_packet(p: KermitPacket, bar: &ProgressBar, port: &mut Box<dyn serialport
     	Ok(_) => {},
 	Err(e) => {
 	    bar.abandon();
-	    crate::helpers::error_handler(format!("Error: failed to write final data packet: {:?}", e));
+	    crate::helpers::error_handler(format!("Error: failed to write data packet: {:?}", e));
 	},
     }
     let response = read_packet(port);
@@ -217,13 +217,13 @@ fn send_packet(p: KermitPacket, bar: &ProgressBar, port: &mut Box<dyn serialport
 	None => {
 	    bar.abandon();
 	    crate::helpers::error_handler(
-		"Error: got no or invalid response for final data (\"D\") packet. Try sending again.".to_string());
+		"Error: got no or invalid response for data (\"D\") packet. Try sending again.".to_string());
 	}
 	_ => {
 	    if response.unwrap().ptype != 'Y' as u8 {
 		bar.abandon();
 		crate::helpers::error_handler(
-		    "Error: no ACK for final data (\"D\") packet. Try sending again.".to_string());
+		    "Error: no ACK for data (\"D\") packet. Try sending again.".to_string());
 	    }
 	},
     }
@@ -287,8 +287,6 @@ fn make_packet_list(f: Vec<u8>, seq: &mut u32) -> Vec<KermitPacket> {
     return packet_list;
 }
 
-// TODO: finish server command
-
 // TODO: this doesn't work with x48 at full speed
 
 // See the top of this file for what this function actually
@@ -337,7 +335,7 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, fin
 	send_packet(p, &bar, port);
 	bar.inc(1);
     }
-    bar.println(format!("seq is {seq}"));
+    //bar.println(format!("seq is {seq}"));
     let z_packet = make_generic_packet(&mut seq, 'Z');
     match port.write(&z_packet) {
     	Ok(_) => {},

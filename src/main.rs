@@ -88,7 +88,7 @@ enum Commands {
 	direct: bool,
     },
 
-    /// Run HP object info check on `path` instead of file transfer
+    /// Run HP object info check on `path` instead of transferring file
     Info {
 	#[clap(parse(from_os_str))]
 	path: PathBuf,
@@ -139,7 +139,12 @@ fn main() {
 	Commands::Xsend { direct, path } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    //println!("Xsend, direct = {:?}, path = {:?}", direct, path);
-	    println!("Sending {:?}...", path);
+	    println!("Sending {:?} {}...",
+		     style(path.file_name().unwrap()).yellow().bright(),
+		     match direct {
+			 true => "via direct XModem",
+			 false => "to XModem server",
+		     });
 	    if *direct {
 		// send file directly to XRECV
 		if cli.finish {
@@ -153,7 +158,7 @@ fn main() {
 		// send file to server
 		xmodem::send_file_conn4x(&path.to_path_buf(), &mut port, &cli.finish);
 	    }
-	    println!("{}", style("Finished!").green().bright());
+	    println!("{}", style("Done!").green().bright());
 	    // I like the way this newline and indent looks.
 	    print!("File info:\n  ");
 	    hp_object::crc_and_output(path);
@@ -172,9 +177,11 @@ fn main() {
 
 	Commands::Ksend { path } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
-	    println!("Ksend, path = {:?}, finish = {:?}", path, cli.finish);
+	    println!("Sending {:?} via Kermit...",
+		     style(path.file_name().unwrap()).yellow().bright());
+	    //println!("Ksend, path = {:?}, finish = {:?}", path, cli.finish);
 	    kermit::send_file(path, &mut port, cli.finish);
-	    println!("File info:\n  ");
+	    print!("File info:\n  ");
 	    hp_object::crc_and_output(path);
 	},
 	// I am not implementing kermit receive right now. Maybe

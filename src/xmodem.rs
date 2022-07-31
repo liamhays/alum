@@ -5,10 +5,6 @@
 // It also needs to work with 1024- and 128-byte packets, for the
 // XModem server.
 
-
-
-
-
 use std::path::PathBuf;
 use std::path::Path;
 use std::ffi::OsStr;
