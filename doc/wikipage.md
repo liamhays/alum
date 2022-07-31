@@ -118,6 +118,9 @@ is identical to a normal XModem transfer (no `D` like in sending),
 EXCEPT that the calculator uses the Conn4x CRC algorithm, creating
 packets as described above.
 
+The XModem server does not consider the ASCII/binary state in
+`IOPAR`. It does follow the value of the overwrite flag.
+
 ### Cancelling a send
 Conn4x sends 3 `CAN` characters at once to cancel a send to the
 calculator. This seems to only work if a 1K packet is being sent---I

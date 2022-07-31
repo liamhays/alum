@@ -138,7 +138,8 @@ fn main() {
     match &cli.command {
 	Commands::Xsend { direct, path } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
-	    println!("Xsend, direct = {:?}, path = {:?}", direct, path);
+	    //println!("Xsend, direct = {:?}, path = {:?}", direct, path);
+	    println!("Sending {:?}...", path);
 	    if *direct {
 		// send file directly to XRECV
 		if cli.finish {
@@ -152,28 +153,40 @@ fn main() {
 		// send file to server
 		xmodem::send_file_conn4x(&path.to_path_buf(), &mut port, &cli.finish);
 	    }
+	    println!("{}", style("Finished!").green().bright());
+	    // I like the way this newline and indent looks.
+	    print!("File info:\n  ");
+	    hp_object::crc_and_output(path);
 	},
 
 	Commands::Xget { direct, path, overwrite } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
-	    println!("Xget, path = {:?}, overwrite = {:?}", path, overwrite);
+	    //println!("Xget, path = {:?}, overwrite = {:?}", path, overwrite);
 	    xmodem::get_file(path, &mut port, direct, overwrite, &cli.finish);
+	    // "of" is not the right preposition to use here, but it
+	    // makes it clear that we're talking about the file after
+	    // processing, stored on the computer's drive.
+	    print!("Info of received file:\n  ");
+	    hp_object::crc_and_output(path);
 	},
 
 	Commands::Ksend { path } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Ksend, path = {:?}, finish = {:?}", path, cli.finish);
 	    kermit::send_file(path, &mut port, cli.finish);
-
+	    println!("File info:\n  ");
+	    hp_object::crc_and_output(path);
 	},
-	// I am not implementing kermit receive right now. No.
+	// I am not implementing kermit receive right now. Maybe
+	// later---it is the only easy way to get ASCII data.
+	
 	/*Commands::Kget { path, overwrite } => {
 	    //let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Kget, path = {:?}, overwrite = {:?}", path, overwrite);
 	},*/
 
 	Commands::Info { path } => {
-	    println!("Info mode, path = {:?}", path);
+	    //println!("Info mode, path = {:?}", path);
 	    hp_object::crc_and_output(path);
 	},
     }

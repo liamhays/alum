@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::fmt;
 
+use console::style;
+
 fn calc_crc(crc: u32, nibble: u8) -> u32 {
     return (crc >> 4) ^ (((crc ^ nibble as u32) & 0xFu32) * 0x1081u32);
 }
@@ -22,9 +24,11 @@ pub struct ObjectInfo {
 impl fmt::Display for ObjectInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 	write!(f, "ROM Revision: {}, Object CRC: {}, Object length (bytes): {:?}",
-	       self.romrev,
-	       self.crc,
-	       self.length as f32 / 2.0)
+	       style(self.romrev).green().bright(),
+	       // ROM revision is not part of BYTES, so why not make
+	       // it a separate color?
+	       style(&self.crc).blue().bright(),
+	       style(self.length as f32 / 2.0).blue().bright())
     }
 }
 

@@ -18,6 +18,7 @@ use std::time::Duration;
 use std::io::Write;
 
 use serialport;
+use console::style;
 
 #[derive(PartialEq)]
 enum ChecksumMode {
@@ -202,7 +203,7 @@ fn wait_for_char(port: &mut Box<dyn serialport::SerialPort>, ack_char: u8) -> u8
 		    return byte;
 		}
 	    },
-	    Err(e) => crate::helpers::error_handler(format!("Error: failed to read char: {:?}", e)),
+	    Err(e) => crate::helpers::error_handler(format!("Error: failed to read from serial port: {:?}", e)),
 	}
 
 	//println!("waiting for ACK");
@@ -336,14 +337,16 @@ fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
 // The directory `fixit` ends with an INTENTIONAL 0x00 byte. What does
 // the XModem server do with it?
 
-// The XModem server breaks it as well. The 0x00 byte is replaced with
-// 0x30 (who knows why...), and sending the same file to the
-// calculator maintains the 0x30 byte, which is incorrect. Moral of
-// the story: check the checksums if you use XModem.
+// The XModem server breaks the file, like we do. The 0x00 byte is
+// replaced with 0x30 (who knows why...), and sending the same file to
+// the calculator maintains the 0x30 byte, which is incorrect. This is
+// a limitation of the XModem protocol. Moral of the story: check the
+// checksums if you use XModem. (though for my money, the XModem
+// server should use standard 0x1a instead of 0x00 for the extra
+// bytes).
 
-// 128-byte packets sent with XModem Server are 132 bytes, hence the
-// function name. The server always sends 128-byte packets even if the
-// file is big enough for 1K XModem.
+// The server always sends 128-byte packets even if the file is big
+// enough for 1K XModem.
 pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool, overwrite: &bool, finish: &bool) {
 
     let mut file = match overwrite {
@@ -370,7 +373,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     };
 
     let pb = crate::helpers::get_spinner(
-	format!("Receiving {:?}...", path.file_name().unwrap()));
+	format!("Receiving {:?}...", style(path.file_name().unwrap()).yellow().bright()));
     
     // We'll push to a Vec<u8>, then write to the file.
     let mut file_contents: Vec<u8> = Vec::new();
@@ -379,14 +382,15 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	// Tell XModem server to send file
 	match port.write(&create_command_packet(path.file_name().unwrap(), 'G')) {
 	    Ok(_) => {},
-	    Err(e) => crate::helpers::error_handler(format!("Error: failed to write packet writing packet {:?}", e)),
+	    Err(e) => crate::helpers::error_handler(
+		format!("Error: failed to write packet writing packet {:?}", e)),
 	}
 	
 	// Wait for ACK from server about command
 	if wait_for_char(port, ACK) != ACK {
 	    crate::helpers::error_handler("Error: got NAK from server when sending 'get' command.".to_string());
 	}
-	println!("got ACK");
+	//println!("got ACK");
     }
 
     // This is needed, probably because the calculator is pretty slow.
@@ -419,7 +423,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	    // transmission finished
 	    break;
 	} else if packet_buf[0] == CAN {
-	    println!("Received cancel from remote side, exiting.");
+	    pb.println(format!("Received cancel from remote side, exiting."));
 	    return;
 	}
 	
@@ -435,7 +439,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	    // put this here instead of in the initial packet_buf
 	    // read, because we only actually get a packet when the
 	    // checksum matches and it's not an EOT.
-	    println!("read packet {:?}", packet_counter);
+	    //println!("read packet {:?}", packet_counter);
 	    match port.write(&byte_buf) {
 		Ok(_) => {},
 		Err(e) => crate::helpers::error_handler(format!(
@@ -491,6 +495,16 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	finish_server(port);
     }
 
-    pb.finish();
+    pb.finish_with_message(
+	format!("Receiving {:?}...{} Got {:?} {}.",
+		style(path.file_name().unwrap()).yellow().bright(),
+		style("done!").green().bright(),
+		packet_counter,
+		match packet_counter {
+		    1 => "packet",
+		    _ => "packets",
+		}
+	)
+    );
     
 }

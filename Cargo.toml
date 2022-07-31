@@ -9,4 +9,5 @@ edition = "2021"
 clap = { version = "3.0", features = ["derive"] }
 serialport = "4.2.0"
 indicatif = "0.16.2"
+# works alongside the indicatif package
 console = "0.15.0"
