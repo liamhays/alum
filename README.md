@@ -38,9 +38,13 @@ Alum is not complicated. Alum does just enough and Alum does it right.
 
 # Usage
 Download a binary from the Releases page and place it somewhere
-convenient. You may wish to add it to your `PATH` variable.
+convenient. You may wish to add it to your `PATH` variable. On Linux,
+ensure you have `libudev` installed---it's available as a package in
+every distro's package manager and is likely pre-installed. Windows
+requires no extra dependencies.
 
-For full usage information, run Alum with no arguments.
+For full usage information, run Alum with no arguments. Alum includes
+its own help, and this section is just a basic rundown of Alum.
 
 Alum supports sending and receiving files to and from 128-byte `XRECV`
 and `XSEND`, as well as full XModem server send and receive
@@ -85,17 +89,6 @@ File info:
 In this example, Alum found the one physical serial port on the system
 and used it automatically.
 
-## Kermit transfers
-Sending to Kermit is almost identical to sending via XModem. To send
-Arkalite like before:
-
-```
-Sending "Arkalite.lib" via Kermit...
-################################################################################################ 32/32 packets (100%)
-File info:
-  ROM Revision: R, Object CRC: #44ABh, Object length (bytes): 1776.0
-```
-
 ## Extra transfer features
 To finish or close any server after a transfer, pass the `-f` flag to
 Alum, like this: `alum -f ksend Arkalite.lib`. If the file transfer is
@@ -103,10 +96,10 @@ successful, Alum will send a quit command to the calculator after the
 transfer.
 
 # Limitations
-Alum has not been tested with any HP 49 series calculator. In fact,
-Alum will not even calculate the checksum of an HP 49 object, because
-I have found that the algorithm I use for HP 48 objects doesn't work
-for HP 49 objects. Alum also does not support the 1K CRC direct
+Alum has only been tested with an HP 48GX. In addition, Alum will not
+calculate the checksum of an HP 49 object, because I have found that
+the algorithm I use for HP 48 objects doesn't work for HP 49
+objects. Alum also does not currently support the 1K CRC direct
 `XRECV` and `XSEND` added in the HP 49.
 
 Alum also does not currently support receiving files over Kermit. If
@@ -119,10 +112,23 @@ until then I intend to only have Kermit send available.
 - [ ] HP 49 object info
 - [ ] (possibly) Kermit receive
 
+## XModem caveat
+XModem is an old standard, and is so simple as to be
+self-destructive. The implementation used by the HP 48 pads the final
+packet with null bytes (`0x00`), and Alum trims these from the
+received file. However, some files have necessary `0x00` bytes at
+their end, and sending these files via XModem causes the object to
+become corrupted. One file that suffers from this is the tool
+[`FIXIT`](https://www.hpcalc.org/details/2416), by Joe Horn and Mika
+Heiskanen. **Conn4x suffers from this same issue, even with this
+file. It is a limitation of XModem. If you have sensitive files, send
+them via Kermit.**
+
 # Contribute
 I have documented the XModem server protocol (which is surprisingly
 nuanced) and some HP 48 Kermit information on the [Alum
-wiki](https://github.com/liamhays/alum/wiki).
+wiki](https://github.com/liamhays/alum/wiki). Feel free to edit or add
+to the wiki if you have information you'd like to share.
 
 If you'd like to work on Alum, simply install Rust from
 [rustup.rs](rustup.rs). Then clone the repository and use `cargo` to
