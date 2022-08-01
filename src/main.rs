@@ -10,9 +10,6 @@ use clap::{Parser, Subcommand};
 use console::style;
 use serialport;
 
-// TODO: Command line flags should be in a more useful order than
-// alphabetical
-
 /// Transfer file to and from calculator.
 #[derive(Parser)]
 #[derive(Debug)]
@@ -120,7 +117,8 @@ fn get_serial_port(cli_port: Option<PathBuf>, cli_baud: Option<u32>) -> Box<dyn 
 	    cli_baud.unwrap()
 	}
     };
-    
+
+    // TODO: this will panic, which is not what we want.
     serialport::new(final_port, final_baud)
 	.timeout(Duration::from_millis(1500))
 	.open().expect("Failed to open port")
@@ -129,8 +127,6 @@ fn get_serial_port(cli_port: Option<PathBuf>, cli_baud: Option<u32>) -> Box<dyn 
 // The finish argument is to be ignored (and a message printed) if the
 // direct flag is set. That is the only time---again, so simple
 // compared to HPex.
-
-// TODO: receiving a file should calculate CRC after getting file
 fn main() {
     let cli = Cli::parse();
 

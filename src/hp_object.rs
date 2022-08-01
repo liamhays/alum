@@ -3,8 +3,8 @@ use std::fmt;
 
 use console::style;
 
-fn calc_crc(crc: u32, nibble: u8) -> u32 {
-    return (crc >> 4) ^ (((crc ^ nibble as u32) & 0xFu32) * 0x1081u32);
+fn calc_crc(crc: &mut u32, nibble: u8) {
+    *crc = (*crc >> 4) ^ (((*crc ^ nibble as u32) & 0xFu32) * 0x1081u32);
 }
 
 enum LengthState {
@@ -166,9 +166,12 @@ fn read_ascic_size(nibs: &Vec<u8>) -> Option<u32> {
     // slice then reconvert to Vec
     let inner_nibbles = nibs[ascic_region_len as usize..].to_vec();
 
-
-    // TODO: don't use unwrap, use something else
-    return Some(calc_object_size(&inner_nibbles).unwrap() + ascic_region_len as u32);
+    let inner_region_len = calc_object_size(&inner_nibbles);
+    match inner_region_len {
+	None => return None,
+	_ => {},
+    }
+    return Some(inner_region_len.unwrap() + ascic_region_len as u32);
     
 }
 
@@ -225,7 +228,8 @@ fn read_size_to_end_marker(nibs: &Vec<u8>) -> Option<u32> {
 	// - 2`.
 	if mem_addr == 0xb2130 && (pos == nibs.len() - 1 || pos == nibs.len() - 2) {
 	    //println!("found end marker, exiting");
-	    // TODO: why do we add 1 here?
+	    
+	    // add 1 to convert index to length.
 	    return Some(pos as u32 + 1);
 	}
     }
@@ -310,7 +314,6 @@ fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
 	None => return None,
     };
 
-    // TODO: maybe this variable should be usize?
     let object_length = match prolog_to_length(prolog) {
 	Some(LengthState::SizeNext) => read_size(&nibbles),
 	Some(LengthState::ASCICNext) => read_ascic_size(&nibbles),
@@ -337,9 +340,12 @@ fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
     //println!("nibble length is {:?}, nibs.len() is {:?}", object_length.unwrap(), nibbles.len());
     //println!("nibbles is {:x?}", nibbles);
     for nibble in &nibbles[0..object_length.unwrap() as usize] {
-	// TODO: maybe use a reference for `crc` or something
 	//println!("nibble is {:x?}", *nibble);
-	crc = calc_crc(crc, *nibble);
+	
+	// A CRC calculation sets the value of the crc variable based
+	// on its previous value, therefore, we can use a mut
+	// reference.
+	calc_crc(&mut crc, *nibble);
     }
 
     // HP hex strings are uppercase

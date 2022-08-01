@@ -287,7 +287,8 @@ fn make_packet_list(f: Vec<u8>, seq: &mut u32) -> Vec<KermitPacket> {
     return packet_list;
 }
 
-// TODO: this doesn't work with x48 at full speed
+// TODO: this is pretty unreliable and doesn't work with x48 at full
+// speed
 
 // See the top of this file for what this function actually
 // does. There are a lot of match statements, but it's how I catch
