@@ -142,12 +142,13 @@ fn main() {
 	Commands::Xsend { direct, path } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    //println!("Xsend, direct = {:?}, path = {:?}", direct, path);
-	    println!("Sending {:?} {}...",
+	    println!("Sending {:?} {} on {}...",
 		     style(path.file_name().unwrap()).yellow().bright(),
 		     match direct {
 			 true => "via direct XModem",
 			 false => "to XModem server",
-		     });
+		     },
+		     style(port.name().unwrap()).green().bright());
 	    if *direct {
 		// send file directly to XRECV
 		if cli.finish {
@@ -180,8 +181,9 @@ fn main() {
 
 	Commands::Ksend { path } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
-	    println!("Sending {:?} via Kermit...",
-		     style(path.file_name().unwrap()).yellow().bright());
+	    println!("Sending {:?} via Kermit on {}...",
+		     style(path.file_name().unwrap()).yellow().bright(),
+		     style(port.name().unwrap()).green().bright());
 	    //println!("Ksend, path = {:?}, finish = {:?}", path, cli.finish);
 	    kermit::send_file(path, &mut port, cli.finish);
 	    print!("File info:\n  ");

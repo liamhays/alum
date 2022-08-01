@@ -376,7 +376,9 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     };
 
     let pb = crate::helpers::get_spinner(
-	format!("Receiving {:?}...", style(path.file_name().unwrap()).yellow().bright()));
+	format!("Receiving {:?} on {}...",
+		style(path.file_name().unwrap()).yellow().bright(),
+		style(port.name().unwrap()).green().bright()));
     
     // We'll push to a Vec<u8>, then write to the file.
     let mut file_contents: Vec<u8> = Vec::new();
@@ -499,8 +501,9 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     }
 
     pb.finish_with_message(
-	format!("Receiving {:?}...{} Got {:?} {}.",
+	format!("Receiving {:?} on {}...{} Got {:?} {}.",
 		style(path.file_name().unwrap()).yellow().bright(),
+		style(port.name().unwrap()).green().bright(),
 		style("done!").green().bright(),
 		packet_counter,
 		match packet_counter {

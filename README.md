@@ -73,7 +73,7 @@ For example, say we want to send the excellent game
 [Arkalite](https://www.hpcalc.org/details/460) to the XModem
 server. That is as simple as running:
 
-```bash
+```
 $ alum xsend Arkalite.lib
 Sending "Arkalite.lib" to XModem server...
 ################################################################################################  7/7  packets (100%)
@@ -85,16 +85,15 @@ File info:
 In this example, Alum found the one physical serial port on the system
 and used it automatically.
 
-
 ## Kermit transfers
 Sending to Kermit is almost identical to sending via XModem. To send
 Arkalite like before:
 
-```bash
+```
 Sending "Arkalite.lib" via Kermit...
 ################################################################################################ 32/32 packets (100%)
 File info:
-  ROM Revision: R, Object CRC: \#44ABh, Object length (bytes): 1776.0
+  ROM Revision: R, Object CRC: #44ABh, Object length (bytes): 1776.0
 ```
 
 ## Extra transfer features
@@ -121,6 +120,10 @@ until then I intend to only have Kermit send available.
 - [ ] (possibly) Kermit receive
 
 # Contribute
+I have documented the XModem server protocol (which is surprisingly
+nuanced) and some HP 48 Kermit information on the [Alum
+wiki](https://github.com/liamhays/alum/wiki).
+
 If you'd like to work on Alum, simply install Rust from
 [rustup.rs](rustup.rs). Then clone the repository and use `cargo` to
 build. Note that `cargo` doesn't like if you try to use `cargo run`
