@@ -210,6 +210,7 @@ fn wait_for_char(port: &mut Box<dyn serialport::SerialPort>, ack_char: u8) -> u8
 
 
 // The way packets are sent and responses are handled don't change.
+
 fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::SerialPort>) {
     let pb = crate::helpers::get_progress_bar(packet_list.len() as u64);
     
@@ -222,6 +223,7 @@ fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::Seria
 	
 	// wait for ACK on current packet
 	let c = wait_for_char(port, ACK);
+	//println!("c is {:?}", c);
 	if c == NAK {
 	    match port.write(packet) {
 		Ok(_) => {},
@@ -236,22 +238,27 @@ fn send_packets(packet_list: &Vec<Vec<u8>>, port: &mut Box<dyn serialport::Seria
 	    // cancel, just exit.
 	    pb.abandon();
 	    crate::helpers::error_handler("Error: transfer cancelled by calculator.".to_string());
+	} else if c == ACK {
+	    // on ACK, increment and check if we need to send EOT
+	    pb.inc(1);
+	    // if we successfully sent the last packet, send EOT after the
+	    // last ACK. This will trigger another ACK, which we look for
+	    // below (but probably don't need to)
+	    if pos == packet_list.len() - 1 {
+		//println!("sending EOT");
+		let wr_buf: [u8; 1] = [EOT];
+		match port.write(&wr_buf) {
+		    Ok(_) => {},
+		    Err(e) => crate::helpers::error_handler(format!("Error: failed to send EOT: {:?}", e)),
+		}
+		wait_for_char(port, ACK);
+	    }
+	} else {
+	    pb.abandon();
+	    crate::helpers::error_handler("Error: unexpected character during transfer.".to_string());
 	}
 	
-	pb.inc(1);
-	// if we successfully sent the last packet, send EOT after the
-	// last ACK. This will trigger another ACK, which we look for
-	// below (but probably don't need to)
-	if pos == packet_list.len() - 1 && c == ACK {
-	    //println!("sending EOT");
-	    let wr_buf: [u8; 1] = [EOT];
-	    match port.write(&wr_buf) {
-		Ok(_) => {},
-		Err(e) => crate::helpers::error_handler(format!("Error: failed to send EOT: {:?}", e)),
-	    }
-	    wait_for_char(port, ACK);
-
-	}
+	
     }
     // make the progress bar visible on screen
     pb.finish();

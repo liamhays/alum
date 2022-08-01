@@ -362,7 +362,7 @@ fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
 pub fn crc_and_output(path: &PathBuf) {
     let object_info = crc_file(path);
     if object_info.is_none() {
-	println!("File is not an HP object or is corrupt");
+	println!("File is not an HP 48 object or is corrupt");
     } else {
 	println!("{}", object_info.unwrap());
     }

@@ -118,10 +118,17 @@ fn get_serial_port(cli_port: Option<PathBuf>, cli_baud: Option<u32>) -> Box<dyn 
 	}
     };
 
-    // TODO: this will panic, which is not what we want.
-    serialport::new(final_port, final_baud)
+    // This is not how I would normally write a match statement, but I
+    // didn't want to deal with the return type in the Err arm.
+    let port = serialport::new(final_port, final_baud)
 	.timeout(Duration::from_millis(1500))
-	.open().expect("Failed to open port")
+	.open();
+    match port {
+	// e.description is a string,
+	Err(ref e) => crate::helpers::error_handler(format!("Error: failed to open port: {}", e.description)),
+	_ => {},
+    }
+    return port.unwrap();
 
 }
 // The finish argument is to be ignored (and a message printed) if the
