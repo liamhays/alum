@@ -5,46 +5,44 @@ Alum is a file transfer tool for HP's RPL calculators.
 Alum (pronounced like the first part of "aluminum") is a command-line
 application for transferring files to and from your calculator.
 
-Alum is intended as a replacement for software like [the Connectivity
-Kit](https://www.hpcalc.org/details/5890). Alum is better because:
+Alum is intended as a replacement for software like [the HP
+Connectivity Kit](https://www.hpcalc.org/details/5890). Alum is better
+because:
 
 - It is cross-platform, currently tested on Windows and Linux
-- It is programmed in Rust, meaning it requires no external
-  dependencies (except for one small package on Linux)
-- Alum uses homegrown implementations of XModem and Kermit, which
-  makes Alum maintainable long-term and also reduces the external
-  dependency count.
+- It is programmed in Rust (compiles to an executable) and requires no
+  external dependencies, except for one small package on Linux
+- Alum uses Rust implementations of XModem and Kermit
   
 I am retiring my previous software HPex, a GUI tool that accomplished
 a similar task. HPex was written in Python 3 and wxPython, which meant
 that the end user needed hundreds of megabytes of shared libraries and
-executables to run HPex.
+executables to run HPex. Even worse, HPex wasn't exactly a great
+application, and had no hope of being useful on Windows because of
+various multi-platform limitations.
 
-Alum is *not* a GUI because a) I can make better software if I don't
-need to focus on GUI programming, b) in my experience, the kind of
-person who uses an HP calculator is comfortable in the command line,
-and c) as mentioned above, the software dependencies for GUI libraries
-are big and bloated. Alum is fast, light, and small.
+Alum is *not* a GUI because a) GUI programming gets in the way of good
+development, b) in my experience, the average HP calculator user is
+comfortable in the command line, and c) as mentioned above, the
+software dependencies for GUI libraries are big and bloated. Alum is
+fast, light, and small.
 
 # Features
-
 Alum can:
 
 - Automatically detect a serial port to use
 - Transfer via Kermit and XModem, both direct and to a server
 - Calculate the checksum and size of any HP 48 object
 
-Alum is not complicated. Alum does just enough and Alum does it right.
-
 # Usage
 Download a binary from the Releases page and place it somewhere
 convenient. You may wish to add it to your `PATH` variable. On Linux,
-ensure you have `libudev` installed---it's available as a package in
-every distro's package manager and is likely pre-installed. Windows
-requires no extra dependencies.
+Alum requires `libudev` to be installed for serial port detection. It
+is in every distro's package manager and is likely
+pre-installed. On Windows, Alum requires no extra dependencies.
 
-For full usage information, run Alum with no arguments. Alum includes
-its own help, and this section is just a basic rundown of Alum.
+For full usage information, run Alum with no arguments. It includes
+its own help, and this section is just a basic usage rundown.
 
 Alum supports sending and receiving files to and from 128-byte `XRECV`
 and `XSEND`, as well as full XModem server send and receive
@@ -102,15 +100,15 @@ the algorithm I use for HP 48 objects doesn't work for HP 49
 objects. Alum also does not currently support the 1K CRC direct
 `XRECV` and `XSEND` added in the HP 49.
 
-Alum also does not currently support receiving files over Kermit. If
-there is significant demand for this feature, I will implement it, but
-until then I intend to only have Kermit send available.
+Alum also does not currently support receiving files over Kermit. I'm
+working on it.
 
 ## Future features
+- [ ] Kermit receive
 - [ ] XModem server and Kermit server file listing
 - [ ] 1K CRC direct XModem
 - [ ] HP 49 object info
-- [ ] (possibly) Kermit receive
+
 
 ## XModem caveat
 XModem is an old standard, and is so simple as to be
@@ -121,25 +119,27 @@ their end, and sending these files via XModem causes the object to
 become corrupted. One file that suffers from this is the tool
 [`FIXIT`](https://www.hpcalc.org/details/2416), by Joe Horn and Mika
 Heiskanen. **Conn4x suffers from this same issue, even with this
-file. It is a limitation of XModem. If you have sensitive files, send
-them via Kermit.**
+file. It is a limitation of XModem. If you have sensitive files, or
+cannot get checksums to match, send them via Kermit.**
 
 # Contribute
-I have documented the XModem server protocol (which is surprisingly
-nuanced) and some HP 48 Kermit information on the [Alum
+I have documented the XModem server protocol and some HP 48 Kermit
+information on the [Alum
 wiki](https://github.com/liamhays/alum/wiki). Feel free to edit or add
 to the wiki if you have information you'd like to share.
 
+If you have any problems or feature requests for Alum, open an issue
+on GitHub or contact me at Liam Hays on the [HP
+Forums](hpmuseum.org/forums).
+
 If you'd like to work on Alum, simply install Rust from
-[rustup.rs](rustup.rs). Then clone the repository and use `cargo` to
+[rustup.rs](rustup.rs), then clone the repository and use `cargo` to
 build. Note that `cargo` doesn't like if you try to use `cargo run`
 with global flags (like `cargo run -f xsend Arkalite.lib`), so you may
 have to use `cargo build` and run Alum directly from
 `target/debug/alum`.
 
-Furthermore, if you would like to see features implemented in Alum,
-feel free to message me at Liam Hays on the MoHPC forums or start a
-new thread. If you like Alum and have an HP Meta Kernel calculator---a
+Finally, if you like Alum and have an HP Meta Kernel calculator---a
 48gII, a 49G, a 49g+, or a 50g---and do not need it anymore, please
 consider selling it or donating it to me so I can improve
 Alum. Message me on the HP Forums if you are interested.
