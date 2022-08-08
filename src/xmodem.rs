@@ -365,7 +365,7 @@ fn create_command_packet(data: Vec<u8>, cmd: char) -> Vec<u8> {
 // bytes if needed. Without this byte, a positive real number will
 // become correct.
 pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool,
-		overwrite: &bool, finish: &bool) {
+		overwrite: &bool, finish: &bool) -> PathBuf {
 
 
     let final_path = match overwrite {
@@ -404,14 +404,14 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     let mut hp_fname: Vec<u8> = Vec::new();
     
     // we can transfer files with special characters but they have to be in HP 48 byte format, not UTF-8.
-    for i in fname.chars() {
+    for i in original_fname.chars() {
 	hp_fname.push(crate::helpers::char_to_hp_char(i));
     }
     
     let pb = crate::helpers::get_spinner(
 	// TODO: this should say the actual file being written to
 	format!("Receiving {} as {} on {}...",
-		style(fname).yellow().bright(),
+		style(original_fname).yellow().bright(),
 		style(final_fname).yellow().bright(),
 		style(port.name().unwrap()).green().bright()));
     
@@ -464,7 +464,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	    break;
 	} else if packet_buf[0] == CAN {
 	    pb.println(format!("Received cancel from remote side, exiting."));
-	    return;
+	    crate::helpers::error_handler("".to_string());
 	}
 	
 	// verify checksum of this packet
@@ -547,5 +547,6 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 		}
 	)
     );
-    
+
+    return final_path; // used in main for crc calculation
 }

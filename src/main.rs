@@ -189,14 +189,13 @@ fn main() {
 	Commands::Xget { direct, path, overwrite } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    //println!("Xget, path = {:?}, overwrite = {:?}", path, overwrite);
-	    xmodem::get_file(path, &mut port, direct, overwrite, &cli.finish);
+	    // get the actual path that the transfer wrote to
+	    let final_path = xmodem::get_file(path, &mut port, direct, overwrite, &cli.finish);
 	    // "of" is not the right preposition to use here, but it
 	    // makes it clear that we're talking about the file after
 	    // processing, stored on the computer's drive.
 	    print!("Info of received file:\n  ");
-	    // TODO: this needs to use the actual path written to,
-	    // which is '*.[0-9]*', not the original path
-	    hp_object::crc_and_output(path);
+	    hp_object::crc_and_output(&final_path);
 	},
 
 	Commands::Ksend { path } => {
@@ -209,8 +208,9 @@ fn main() {
 	    print!("File info:\n  ");
 	    hp_object::crc_and_output(path);
 	},
-	// I am not implementing kermit receive right now. Maybe
-	// later---it is the only easy way to get ASCII data.
+	// I am not implementing kermit receive at the moment, but I
+	// probably will later, because it's the only easy way to get
+	// ASCII data.
 	
 	/*Commands::Kget { path, overwrite } => {
 	    //let mut port = get_serial_port(cli.port, cli.baud);
