@@ -338,7 +338,10 @@ fn crc_file(path: &PathBuf) -> Option<ObjectInfo> {
     // nibbles.
     let mut crc = 0u32;
     //println!("nibble length is {:?}, nibs.len() is {:?}", object_length.unwrap(), nibbles.len());
-    //println!("nibbles is {:x?}", nibbles);
+    //println!("nibbles is {:x?}, nibs.len() is {:?}", nibbles, nibbles.len());
+    if (object_length.unwrap() as usize) > nibbles.len() {
+	return None;
+    }
     for nibble in &nibbles[0..object_length.unwrap() as usize] {
 	//println!("nibble is {:x?}", *nibble);
 	

@@ -194,6 +194,8 @@ fn main() {
 	    // makes it clear that we're talking about the file after
 	    // processing, stored on the computer's drive.
 	    print!("Info of received file:\n  ");
+	    // TODO: this needs to use the actual path written to,
+	    // which is '*.[0-9]*', not the original path
 	    hp_object::crc_and_output(path);
 	},
 

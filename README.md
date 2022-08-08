@@ -1,7 +1,7 @@
 # alum
 Alum is a file transfer tool for HP's RPL calculators.
 
-# Why Alum?
+## Why Alum?
 Alum (pronounced like the first part of "aluminum") is a command-line
 application for transferring files to and from your calculator.
 
@@ -57,9 +57,9 @@ server.
 ## CLI
 Alum uses a "subcommand" structure. The commands are:
 
-- `xsend`: send file to XModem server
-- `xget`: get file from XModem server
-- `ksend`: send file to Kermit
+- `xsend`: send file with XModem
+- `xget`: get file with XModem
+- `ksend`: send file with Kermit
 - `info`: calculate file size and HP checksum on file
 
 Each subcommand takes a file argument and optionally flags. Alum
@@ -73,7 +73,7 @@ XModem server. To communicate with `XSEND` and `XRECV`, specify the
 
 For example, say we want to send the excellent game
 [Arkalite](https://www.hpcalc.org/details/460) to the XModem
-server. That is as simple as running:
+server. That's as simple as:
 
 ```
 $ alum xsend Arkalite.lib
@@ -86,6 +86,10 @@ File info:
 
 In this example, Alum found the one physical serial port on the system
 and used it automatically.
+
+Sometimes, after a file has been transferred to the calculator, the
+rightmost "data transfer" annunciator will stay on. I don't know why
+this is and it appears to be harmless.
 
 ## Extra transfer features
 To finish or close any server after a transfer, pass the `-f` flag to
@@ -109,27 +113,28 @@ working on it.
 - [ ] 1K CRC direct XModem
 - [ ] HP 49 object info
 
-
 ## XModem caveat
 XModem is an old standard, and is so simple as to be
 self-destructive. The implementation used by the HP 48 pads the final
 packet with null bytes (`0x00`), and Alum trims these from the
 received file. However, some files have necessary `0x00` bytes at
 their end, and sending these files via XModem causes the object to
-become corrupted. One file that suffers from this is the tool
-[`FIXIT`](https://www.hpcalc.org/details/2416), by Joe Horn and Mika
-Heiskanen. **Conn4x suffers from this same issue, even with this
-file. It is a limitation of XModem. If you have sensitive files, or
-cannot get checksums to match, send them via Kermit.**
+become corrupted. For example, one file that suffers from this is the
+tool [`FIXIT`](https://www.hpcalc.org/details/2416), by Joe Horn and
+Mika Heiskanen. **Conn4x suffers from this same issue, including with
+this particular file. It is a limitation of the XModem protocol. If
+you have sensitive files, or cannot get checksums to match, send them
+via Kermit.**
 
 # Contribute
 I have documented the XModem server protocol and some HP 48 Kermit
 information on the [Alum
 wiki](https://github.com/liamhays/alum/wiki). Feel free to edit or add
-to the wiki if you have information you'd like to share.
+to the wiki if you have information about any aspect of RPL calculator
+communication you'd like to share.
 
 If you have any problems or feature requests for Alum, open an issue
-on GitHub or contact me at Liam Hays on the [HP
+here on GitHub or contact me at Liam Hays on the [HP
 Forums](hpmuseum.org/forums).
 
 If you'd like to work on Alum, simply install Rust from
@@ -141,5 +146,5 @@ have to use `cargo build` and run Alum directly from
 
 Finally, if you like Alum and have an HP Meta Kernel calculator---a
 48gII, a 49G, a 49g+, or a 50g---and do not need it anymore, please
-consider selling it or donating it to me so I can improve
-Alum. Message me on the HP Forums if you are interested.
+consider donating it to me so I can improve Alum for the Meta Kernel
+series. Message me on the HP Forums if you are interested.

@@ -7,7 +7,6 @@
 
 use std::path::PathBuf;
 use std::path::Path;
-use std::ffi::OsStr;
 use std::fs::File;
 use std::thread;
 use std::time::Duration;
@@ -28,7 +27,8 @@ const EOT: u8 = 0x04;
 const ACK: u8 = 0x06;
 const NAK: u8 = 0x15;
 const CAN: u8 = 0x18;
-const SUB: u8 = 0x1a; // used as packet filler, ascii code SUB (substitute)
+// XModem is supposed to use 0x1a, but the HP uses 0x00.
+const SUB: u8 = 0x00;//0x1a; // used as packet filler, ascii code SUB (substitute)
 
 // packet_count_offset is an adjustment to the packet-counting loop
 // inside this function. For example, if the offset is 3, then the
@@ -112,6 +112,11 @@ fn data_to_128_packets(data: &Vec<u8>, packet_count_offset: usize, checksum_mode
 
 // Converted straight from Conn4x source. This is not standard with
 // the CCITT CRC calculation.
+
+// The Conn4x CRC is identical to the HP's internal CRC algorithm. I
+// implement this in hp_object.rs, however, my implementation works on
+// individual nibbles at a time. This version, with a CRC table, works
+// on bytes.
 fn init_crc_array() -> [u32; 256] {
     let mut crc_array: [u32; 256] = [0; 256];
     let mut i = 0usize;
@@ -283,7 +288,13 @@ pub fn send_file_conn4x(path: &PathBuf, port: &mut Box<dyn serialport::SerialPor
     
     let packet_list = data_to_conn4x_packets(&file_contents);
 
-    match port.write(&create_command_packet(path.file_name().unwrap(), 'P')) {
+    let fname = path.file_name().unwrap().to_str().unwrap();
+    let mut hp_fname: Vec<u8> = Vec::new();
+    for i in fname.chars() {
+	hp_fname.push(crate::helpers::char_to_hp_char(i));
+    }
+    
+    match port.write(&create_command_packet(hp_fname, 'P')) {
 	Ok(_) => {},
 	Err(e) => crate::helpers::error_handler(format!("error writing packet: {:?}", e)),
     };
@@ -318,7 +329,7 @@ pub fn send_file_normal(path: &PathBuf, port: &mut Box<dyn serialport::SerialPor
 // This function creates a "command packet" for the XModem server. It
 // also adds the initial command to the entire Vec<u8>. See my XModem
 // server documentation for more information about this.
-fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
+fn create_command_packet(data: Vec<u8>, cmd: char) -> Vec<u8> {
     let mut cmd_packet: Vec<u8> = Vec::new();
     cmd_packet.push(cmd as u8);
     cmd_packet.push(((data.len() as u32 & 0xff00u32) >> 8) as u8);
@@ -327,8 +338,8 @@ fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
     // You can't iterate over an OsStr because it might contain
     // different encodings, so you have to convert it. You can iterate
     // over a &str, which to_str() creates.
-    for c in data.to_str().unwrap().chars() {
-	cmd_packet.push(c as u8);
+    for c in data {//.to_str().unwrap().chars() {
+	cmd_packet.push(c);// as u8);
 	checksum += c as u32;
     }
 
@@ -350,6 +361,10 @@ fn create_command_packet(data: &OsStr, cmd: char) -> Vec<u8> {
 
 // The server always sends 128-byte packets even if the file is big
 // enough for 1K XModem.
+
+// (likely incorrect) Conn4x will do something to a real number and add an extra 00
+// bytes if needed. Without this byte, a positive real number will
+// become correct.
 pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool, overwrite: &bool, finish: &bool) {
 
     let mut file = match overwrite {
@@ -375,7 +390,17 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	}
     };
 
+    let fname = path.file_name().unwrap().to_str().unwrap();
+    let mut hp_fname: Vec<u8> = Vec::new();
+    
+    // we can transfer files with special characters but they have to be in HP 48 byte format, not UTF-8.
+    for i in fname.chars() {
+	hp_fname.push(crate::helpers::char_to_hp_char(i));
+    }
+    println!("hp_fname is {:x?}", hp_fname);
+    
     let pb = crate::helpers::get_spinner(
+	// TODO: this should say the actual file being written to
 	format!("Receiving {:?} on {}...",
 		style(path.file_name().unwrap()).yellow().bright(),
 		style(port.name().unwrap()).green().bright()));
@@ -385,7 +410,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 
     if !direct {
 	// Tell XModem server to send file
-	match port.write(&create_command_packet(path.file_name().unwrap(), 'G')) {
+	match port.write(&create_command_packet(hp_fname, 'G')) {
 	    Ok(_) => {},
 	    Err(e) => crate::helpers::error_handler(
 		format!("Error: failed to write packet writing packet {:?}", e)),
