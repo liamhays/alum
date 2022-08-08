@@ -6,7 +6,6 @@
 // XModem server.
 
 use std::path::PathBuf;
-use std::path::Path;
 use std::fs::File;
 use std::thread;
 use std::time::Duration;
@@ -365,10 +364,12 @@ fn create_command_packet(data: Vec<u8>, cmd: char) -> Vec<u8> {
 // (likely incorrect) Conn4x will do something to a real number and add an extra 00
 // bytes if needed. Without this byte, a positive real number will
 // become correct.
-pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool, overwrite: &bool, finish: &bool) {
+pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool,
+		overwrite: &bool, finish: &bool) {
 
-    let mut file = match overwrite {
-	true => File::create(path).unwrap(),
+
+    let final_path = match overwrite {
+	true => PathBuf::from(path),
 	false => {
 	    let mut counter = 0;
 	    // We loop starting with the counter at 0, until we find a
@@ -380,9 +381,11 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 		    0 => String::from(path.to_str().unwrap()),
 		    _ => format!("{}.{:?}", path.to_str().unwrap(), counter),
 		};
-		let new_path = Path::new(&new_string);
+		// we have to use a PathBuf because it's an owned type
+		let new_path = PathBuf::from(&new_string);
+
 		if !new_path.exists() {
-		    break File::create(new_path).unwrap();
+		    break new_path;
 		}
 
 		counter += 1;
@@ -390,22 +393,29 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	}
     };
 
-    let fname = path.file_name().unwrap().to_str().unwrap();
+    // original_fname is the filename only of the path passed to the code
+    // final_fname is the filename only of the path we're writing to
+    let original_fname = path.file_name().unwrap().to_str().unwrap();
+    let final_fname = final_path.file_name().unwrap().to_str().unwrap();
+    
+    let mut file = File::create(path).unwrap();
+
+    // hp_fname is the list of bytes we actually send to the calculator, with HP 48 byte conversion
     let mut hp_fname: Vec<u8> = Vec::new();
     
     // we can transfer files with special characters but they have to be in HP 48 byte format, not UTF-8.
     for i in fname.chars() {
 	hp_fname.push(crate::helpers::char_to_hp_char(i));
     }
-    println!("hp_fname is {:x?}", hp_fname);
     
     let pb = crate::helpers::get_spinner(
 	// TODO: this should say the actual file being written to
-	format!("Receiving {:?} on {}...",
-		style(path.file_name().unwrap()).yellow().bright(),
+	format!("Receiving {} as {} on {}...",
+		style(fname).yellow().bright(),
+		style(final_fname).yellow().bright(),
 		style(port.name().unwrap()).green().bright()));
     
-    // We'll push to a Vec<u8>, then write to the file.
+    // We push to a Vec<u8> then write to the file.
     let mut file_contents: Vec<u8> = Vec::new();
 
     if !direct {
