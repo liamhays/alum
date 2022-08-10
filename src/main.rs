@@ -160,6 +160,7 @@ fn main() {
 	Commands::Xsend { direct, path } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    //println!("Xsend, direct = {:?}, path = {:?}", direct, path);
+	    // we actually use {:?} on the filename so that it displays in quotes
 	    println!("Sending {:?} {} on {}...",
 		     style(path.file_name().unwrap()).yellow().bright(),
 		     match direct {

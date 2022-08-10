@@ -153,20 +153,25 @@ fn make_generic_packet(seq: &mut u32, ptype: char) -> Vec<u8> {
 }
 
 // eventual todo: should use Result instead of Option
-fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Option<KermitPacket> {
+
+// TODO: I don't know why this fails sometimes, but I think it has to
+// do with how we read the packet (3 bytes then rest of packet).
+fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacket, String> {//Option<KermitPacket> {
     // have to sleep, probably because the calculator is slow
     std::thread::sleep(std::time::Duration::from_millis(300));
     // it seems we have to read 3 bytes, then the rest of the packet
     let mut header: [u8; 3] = [0; 3];
     match port.read(header.as_mut_slice()) {
 	Ok(_) => {},
-	Err(e) => crate::helpers::error_handler(format!("Error: failed to read header of packet: {:?}", e)),
+	Err(e) => {
+	    let mut err = String::from("failed to read header of packet: ");
+	    err.push_str(&e.to_string());
+	    return Err(err);
+	},
     }
     
     if header[0] != SOH {
-	eprintln!("SOH missing from packet.");
-	// something is very wrong
-	return None;
+	return Err("malformed Kermit packet (SOH missing)".to_string());
     }
 
     // LEN field
@@ -176,7 +181,11 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Option<KermitPacke
 
     match port.read(rest_of_packet.as_mut_slice()) {
 	Ok(_) => {},
-	Err(e) => crate::helpers::error_handler(format!("Error: failed to read packet data: {:?}", e)),
+	Err(e) => {
+	    let mut err = String::from("failed to read packet data: {:?}");
+	    err.push_str(&e.to_string());
+	    return Err(err);
+	},
     }
     
     // subtract 2 to drop 0x0d and check field, to isolate just data
@@ -195,10 +204,10 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Option<KermitPacke
     let rx_checksum = rest_of_packet[len as usize - 3];
     // verify checksum on packet
     if rx_checksum != packet.calc_check() {
-	return None;
+	return Err("Error: checksum of received data does not match checksum in packet".to_string());
     }
 
-    return Some(packet);
+    return Ok(packet);
 }
 
 // This function will exit the entire program on error.
@@ -212,19 +221,17 @@ fn send_packet(p: KermitPacket, bar: &ProgressBar, port: &mut Box<dyn serialport
 	    crate::helpers::error_handler(format!("Error: failed to write data packet: {:?}", e));
 	},
     }
-    let response = read_packet(port);
-    match response {
-	None => {
-	    bar.abandon();
-	    crate::helpers::error_handler(
-		"Error: got no or invalid response for data (\"D\") packet. Try sending again.".to_string());
-	}
-	_ => {
-	    if response.unwrap().ptype != 'Y' as u8 {
+    match read_packet(port) {
+	Ok(packet) => {
+	    if packet.ptype != 'Y' as u8 {
 		bar.abandon();
 		crate::helpers::error_handler(
 		    "Error: no ACK for data (\"D\") packet. Try sending again.".to_string());
 	    }
+	},
+	Err(e) => {
+	    bar.abandon();
+	    crate::helpers::error_handler(format!("Error: bad \"D\" packet response: {:?}.", e));
 	},
     }
 }
@@ -288,7 +295,7 @@ fn make_packet_list(f: Vec<u8>, seq: &mut u32) -> Vec<KermitPacket> {
 }
 
 // TODO: this is pretty unreliable and doesn't work with x48 at full
-// speed
+// speed. It has to do with the read_packet() function.
 
 // See the top of this file for what this function actually
 // does. There are a lot of match statements, but it's how I catch
@@ -303,14 +310,13 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, fin
 	Ok(_) => {},
 	Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"S\" packet: {:?}", e)),
     }
-    let mut response = read_packet(port);
-    match response {
-	None => crate::helpers::error_handler("Error: got no or invalid response for \"S\" packet.".to_string()),
-	_ => {
-	    if response.unwrap().ptype != 'Y' as u8 {
+    match read_packet(port) {
+	Ok(packet) => {
+	    if packet.ptype != 'Y' as u8 {
 		crate::helpers::error_handler("Error: no ACK for \"S\" packet. Try sending again.".to_string());
 	    }
 	},
+	Err(e) => crate::helpers::error_handler(format!("Error: bad \"S\" packet response: {:?}.", e)),
     }
     
     let f_packet = make_f_packet(&mut seq, path.file_name().unwrap());
@@ -318,15 +324,13 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, fin
     	Ok(_) => {},
 	Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"F\" packet: {:?}", e)),
     }
-    response = read_packet(port);
-    match response {
-	None => crate::helpers::error_handler("Error: got no or invalid response for \"F\" packet.".to_string()),
-
-	_ => {
-	    if response.unwrap().ptype != 'Y' as u8 {
+    match read_packet(port) {
+	Ok(packet) => {
+	    if packet.ptype != 'Y' as u8 {
 		crate::helpers::error_handler("Error: no ACK for \"F\" packet. Try sending again.".to_string());
 	    }
 	},
+	Err(e) => crate::helpers::error_handler(format!("Error: bad \"F\" packet response: {:?}", e)),
     }
 
     let packet_list = make_packet_list(file_contents, &mut seq);
