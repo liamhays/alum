@@ -85,6 +85,14 @@ fn prolog_to_length(prolog: u32) -> Option<LengthState> {
 
 /**** Each prolog decoder returns a size including the prolog. ****/
 
+/* Although it doesn't really matter, since they are effectively the
+ * same under the hood, I use to_owned() instead of
+ * to_string.(). to_owned() makes it clear that I want convert what is
+ * already a string into an owned string, instead of what is already a
+ * string into another (but different type of) string.
+ */
+
+
 // This does not need to have Option because prolog_to_length already checks for all these prologs.
 fn prolog_to_fixed_length(prolog: u32) -> Result<u32, String> {
     //println!("prolog to fixed length");
@@ -104,7 +112,7 @@ fn prolog_to_fixed_length(prolog: u32) -> Result<u32, String> {
 	// DOROMP
 	0x2e92 => Ok(11),
 	// should never happen
-	_ => Err("unknown prolog of fixed length object, this error should never happen".to_string()),
+	_ => Err("unknown prolog of fixed length object, this error should never happen".to_owned()),
     }
 }
 	    
@@ -112,7 +120,7 @@ fn read_size(nibs: &Vec<u8>) -> Result<u32, String> {
     // We have to go at least 10 nibbles in; if the object is less
     // than that, something is wrong.
     if nibs.len() < 10 {
-	return Err("object is less than 10 nibbles long".to_string());
+	return Err("object is less than 10 nibbles long".to_owned());
     }
     
     let mut length = 0u32;
@@ -127,7 +135,7 @@ fn read_size(nibs: &Vec<u8>) -> Result<u32, String> {
 
 fn get_prolog(nibs: &Vec<u8>) -> Result<u32, String> {
     if nibs.len() < 5 {
-	return Err("object is less than 5 nibbles long".to_string());
+	return Err("object is less than 5 nibbles long".to_owned());
     }
     
     let mut prolog = 0u32;
@@ -145,7 +153,7 @@ fn calc_object_size(nibs: &Vec<u8>) -> Result<u32, String> {
     };
     let object_length_type = prolog_to_length(prolog);
     if object_length_type.is_none() {
-	return Err("unknown prolog".to_string());
+	return Err("unknown prolog".to_owned());
     } else {
 	// This length includes the prolog.  The compiler won't let us
 	// use the ? operator in any of these match arms, but we can
@@ -158,7 +166,7 @@ fn calc_object_size(nibs: &Vec<u8>) -> Result<u32, String> {
 	    Some(LengthState::DirNext) => read_dir_size(&nibs),
 	    Some(LengthState::Fixed) => prolog_to_fixed_length(prolog),
 	    Some(LengthState::FindEndMarker) => read_size_to_end_marker(&nibs),
-	    None => Err("unknown object prolog, could not calculate object length".to_string()),
+	    None => Err("unknown object prolog, could not calculate object length".to_owned()),
 	}?)
     }
 }
@@ -176,14 +184,7 @@ fn read_ascic_size(nibs: &Vec<u8>) -> Result<u32, String> {
     let inner_region_len = calc_object_size(&inner_nibbles);
     match inner_region_len {
 	Ok(inner) => return Ok(inner + ascic_region_len as u32),
-	Err(e) => {
-	    // so if we declare a variable, we avoid a temporary value
-	    // error, but if we try to do this inline (String::from +
-	    // &e), it fails to compile. odd.
-	    let mut err = String::from("unable to read size of object in ASCIC field: ");
-	    err.push_str(&e);
-	    return Err(err);
-	},
+	Err(e) => return Err("unable to read size of object in ASCIC field: ".to_owned() + &e),
     }
 }
 
@@ -203,11 +204,7 @@ fn read_ascix_size(nibs: &Vec<u8>) -> Result<u32, String> {
     let inner_region = calc_object_size(&inner_nibbles);
     match inner_region {
 	Ok(inner) => Ok(inner + ascix_region_len as u32),
-	Err(e) => {
-	    let mut err = String::from("unable to read size of object in ASCIC field: ");
-	    err.push_str(&e);
-	    return Err(err);
-	},
+	Err(e) => return Err("unable to read size of object in ASCIC field: ".to_owned() + &e),
     }
     //println!("inner_region is {:?} nibbles, {:?} bytes", inner_region.unwrap(), inner_region.unwrap() / 2);
 }
@@ -240,7 +237,7 @@ fn read_size_to_end_marker(nibs: &Vec<u8>) -> Result<u32, String> {
 	    return Ok(pos as u32 + 1);
 	}
     }
-    return Err("no end marker (0x0312B) found".to_string());
+    return Err("no end marker (0x0312B) found".to_owned());
 }
 
 
@@ -307,7 +304,7 @@ fn crc_file(path: &PathBuf) -> Result<ObjectInfo, String> {
 
     // shortest possible object is a char at 7 nibbles; 7 nibbles plus 8 bytes = 12 bytes rounded up.
     if file_contents.len() < 12 {
-	return Err("file is corrupt (too short to be an HP object)".to_string());
+	return Err("file is corrupt (too short to be an HP object)".to_owned());
     }
     
     let romrev_header = &file_contents[0..6];
@@ -315,7 +312,7 @@ fn crc_file(path: &PathBuf) -> Result<ObjectInfo, String> {
     if romrev_header != b"HPHP48" {
 	// We refuse to parse HP 49 objects because they are likely to
 	// produce incorrect values.
-	return Err("file is not an HP 48 binary object (does not start with HPHP48)".to_string());
+	return Err("file is not an HP 48 binary object (does not start with HPHP48)".to_owned());
     }
 
     let romrev = *&file_contents[7] as char;
@@ -338,7 +335,7 @@ fn crc_file(path: &PathBuf) -> Result<ObjectInfo, String> {
 	Some(LengthState::DirNext) => read_dir_size(&nibbles),
 	Some(LengthState::Fixed) => prolog_to_fixed_length(prolog),
 	Some(LengthState::FindEndMarker) => read_size_to_end_marker(&nibbles),
-	None => return Err("unknown object prolog, could not calculate object length".to_string()),
+	None => return Err("unknown object prolog, could not calculate object length".to_owned()),
     }?;
 
     
@@ -357,7 +354,7 @@ fn crc_file(path: &PathBuf) -> Result<ObjectInfo, String> {
     //println!("nibble length is {:?}, nibs.len() is {:?}", object_length.unwrap(), nibbles.len());
     //println!("nibbles is {:x?}, nibs.len() is {:?}", nibbles, nibbles.len());
     if (object_length as usize) > nibbles.len() {
-	return Err("object length is greater than file size; file may be corrupt".to_string());
+	return Err("object length is greater than file size; file may be corrupt".to_owned());
     }
     for nibble in &nibbles[0..object_length as usize] {
 	//println!("nibble is {:x?}", *nibble);

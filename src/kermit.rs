@@ -156,22 +156,18 @@ fn make_generic_packet(seq: &mut u32, ptype: char) -> Vec<u8> {
 
 // TODO: I don't know why this fails sometimes, but I think it has to
 // do with how we read the packet (3 bytes then rest of packet).
-fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacket, String> {//Option<KermitPacket> {
+fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacket, String> {
     // have to sleep, probably because the calculator is slow
     std::thread::sleep(std::time::Duration::from_millis(300));
     // it seems we have to read 3 bytes, then the rest of the packet
     let mut header: [u8; 3] = [0; 3];
     match port.read(header.as_mut_slice()) {
 	Ok(_) => {},
-	Err(e) => {
-	    let mut err = String::from("failed to read header of packet: ");
-	    err.push_str(&e.to_string());
-	    return Err(err);
-	},
+	Err(e) => return Err("failed to read header of packet: ".to_owned() + &e.to_string()),
     }
     
     if header[0] != SOH {
-	return Err("malformed Kermit packet (SOH missing)".to_string());
+	return Err("malformed Kermit packet (SOH missing)".to_owned());
     }
 
     // LEN field
@@ -181,11 +177,7 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacke
 
     match port.read(rest_of_packet.as_mut_slice()) {
 	Ok(_) => {},
-	Err(e) => {
-	    let mut err = String::from("failed to read packet data: {:?}");
-	    err.push_str(&e.to_string());
-	    return Err(err);
-	},
+	Err(e) => return Err("failed to read packet data: ".to_owned() + &e.to_string()),
     }
     
     // subtract 2 to drop 0x0d and check field, to isolate just data
@@ -204,7 +196,7 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacke
     let rx_checksum = rest_of_packet[len as usize - 3];
     // verify checksum on packet
     if rx_checksum != packet.calc_check() {
-	return Err("Error: checksum of received data does not match checksum in packet".to_string());
+	return Err("Error: checksum of received data does not match checksum in packet".to_owned());
     }
 
     return Ok(packet);
