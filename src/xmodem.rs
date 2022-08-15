@@ -409,7 +409,6 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     }
     
     let pb = crate::helpers::get_spinner(
-	// TODO: this should say the actual file being written to
 	format!("Receiving {} as {} on {}...",
 		style(original_fname).yellow().bright(),
 		style(final_fname).yellow().bright(),
