@@ -309,6 +309,7 @@ pub fn send_file_conn4x(path: &PathBuf, port: &mut Box<dyn serialport::SerialPor
     if *finish {
 	finish_server(port);
     }
+
     
 }
 
@@ -392,13 +393,14 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
 	    }
 	}
     };
-
+    
+    println!("final_path in get_file is {:?}", final_path);
     // original_fname is the filename only of the path passed to the code
     // final_fname is the filename only of the path we're writing to
     let original_fname = path.file_name().unwrap().to_str().unwrap();
     let final_fname = final_path.file_name().unwrap().to_str().unwrap();
     
-    let mut file = File::create(path).unwrap();
+    let mut file = File::create(final_path.clone()).unwrap();
 
     // hp_fname is the list of bytes we actually send to the calculator, with HP 48 byte conversion
     let mut hp_fname: Vec<u8> = Vec::new();
