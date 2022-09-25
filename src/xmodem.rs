@@ -367,33 +367,13 @@ fn create_command_packet(data: Vec<u8>, cmd: char) -> Vec<u8> {
 // become correct.
 pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool,
 		overwrite: &bool, finish: &bool) -> PathBuf {
+    
 
 
     let final_path = match overwrite {
-	true => PathBuf::from(path),
-	false => {
-	    let mut counter = 0;
-	    // We loop starting with the counter at 0, until we find a
-	    // file that doesn't exist. This is a bit of a hack,
-	    // because we convert path to a String and then make a
-	    // Path back from a modified string.
-	    loop {
-		let new_string = match counter {
-		    0 => String::from(path.to_str().unwrap()),
-		    _ => format!("{}.{:?}", path.to_str().unwrap(), counter),
-		};
-		// we have to use a PathBuf because it's an owned type
-		let new_path = PathBuf::from(&new_string);
-
-		if !new_path.exists() {
-		    break new_path;
-		}
-
-		counter += 1;
-	    }
-	}
+	true => path.to_path_buf(),
+	false => crate::helpers::get_unique_path(path.to_path_buf()),
     };
-    
     println!("final_path in get_file is {:?}", final_path);
     // original_fname is the filename only of the path passed to the code
     // final_fname is the filename only of the path we're writing to

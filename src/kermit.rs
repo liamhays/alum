@@ -18,6 +18,8 @@
 
 use std::path::PathBuf;
 use std::ffi::OsStr;
+use std::fs::File;
+use std::io::Write;
 
 use serialport;
 use indicatif::ProgressBar;
@@ -152,8 +154,6 @@ fn make_generic_packet(seq: &mut u32, ptype: char) -> Vec<u8> {
     return p.to_vec();
 }
 
-// eventual todo: should use Result instead of Option
-
 // TODO: I don't know why this fails sometimes, but I think it has to
 // do with how we read the packet (3 bytes then rest of packet).
 fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacket, String> {
@@ -165,7 +165,7 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacke
 	Ok(_) => {},
 	Err(e) => return Err("failed to read header of packet: ".to_owned() + &e.to_string()),
     }
-    //println!("header is {:x?}", header);
+    println!("header is {:x?}", header);
     if header[0] != SOH {
 	return Err("malformed Kermit packet (SOH missing)".to_owned());
     }
@@ -174,16 +174,18 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacke
     let len = unchar(header[1]);
     // this would be len - 1, but we want to also read the CR at the end of the packet.
     let mut rest_of_packet = vec![0 as u8; len as usize];
-    
+
+    std::thread::sleep(std::time::Duration::from_millis(200));
     match port.read(rest_of_packet.as_mut_slice()) {
 	Ok(_) => {},
 	Err(e) => return Err("failed to read packet data: ".to_owned() + &e.to_string()),
     }
-    //println!("rest of packet is {:x?}", rest_of_packet);
+    println!("rest of packet is {:x?}", rest_of_packet);
     // subtract 2 to drop 0x0d and check field, to isolate just data
     // portion and assemble KermitPacket struct.
     let data_field = rest_of_packet[1..(len as usize - 2)].to_vec();
     let packet = KermitPacket {
+	// TODO: should len be the `len` variable above, that's been uncharred?
 	len: header[1],
 	seq: header[2],
 	ptype: rest_of_packet[0],
@@ -198,6 +200,8 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacke
     if rx_checksum != packet.calc_check() {
 	return Err("Error: checksum of received data does not match checksum in packet".to_owned());
     }
+
+    println!("packet is {:x?}", packet);
 
     return Ok(packet);
 }
@@ -339,6 +343,7 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, fin
     	Ok(_) => {},
 	Err(e) => crate::helpers::error_handler(format!("Error: failed to write \"F\" packet: {}", e)),
     }
+    
     match read_packet(port) {
 	Ok(packet) => {
 	    if packet.ptype != 'Y' as u8 {
@@ -384,4 +389,144 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, fin
     if finish {
 	finish_server(port);
     }
+}
+
+
+
+pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
+    println!("kermit::get_file");
+    
+    let mut seq = 0;
+    let mut out = File::create(path).unwrap();
+
+    // read S packet, which initializes connection from the calculator
+    match read_packet(port) {
+	Ok(packet) => {
+	    if packet.ptype != 'S' as u8 {
+		crate::helpers::error_handler("Error: failed to read \"S\" packet.".to_string());
+	    }
+	},
+	Err(e) => crate::helpers::error_handler(format!("Error: bad \"S\" packet response: {}.", e)),
+    }
+
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    // ack the S packet with a send-init packet of our own
+    let s_ack_packet = make_init_packet(&mut seq, 'Y');
+    match port.write(&s_ack_packet) {
+    	Ok(_) => {},
+	Err(e) => crate::helpers::error_handler(
+	    format!("Error: failed to write \"Y\" packet for \"S\" packet: {}", e)),
+    }
+    
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    // read F packet, which includes filename
+    match read_packet(port) {
+	Ok(packet) => {
+	    if packet.ptype != 'F' as u8 {
+		crate::helpers::error_handler("Error: failed to read \"F\" packet".to_string());
+	    }
+	},
+	Err(e) => crate::helpers::error_handler(format!("Error: bad \"F\" packet: {}", e)),
+    }
+
+    // generic ack the F packet
+    let f_ack_packet = make_generic_packet(&mut seq, 'Y');
+    match port.write(&f_ack_packet) {
+    	Ok(_) => {},
+	Err(e) => crate::helpers::error_handler(
+	    format!("Error: failed to write \"Y\" packet for \"F\" packet: {}", e)),
+    }
+
+    let mut file_bytes: Vec<u8> = Vec::new();
+    loop {
+	let packet: KermitPacket = match read_packet(port) {
+	    Ok(packet) => {
+
+		if packet.ptype == 'D' as u8 {
+		    packet
+		} else if packet.ptype == 'Z' as u8 {
+		    // Z (end-of-file) is sent by the calc
+		    println!("got Z packet");
+		    break;
+		} else {
+		    crate::helpers::error_handler(format!("Error: unexpected packet type when waiting for \"D\" packet."));
+		    KermitPacket {data: Vec::new(), len: 0, ptype: 0u8, seq: 0}
+		}
+	    },
+	    Err(e) => {
+		crate::helpers::error_handler(format!("Error: bad \"D\" packet: {}.", e));
+		KermitPacket {data: Vec::new(), len: 0, ptype: 0u8, seq: 0}
+	    }
+	};
+
+	// convert funky Kermit data format into raw bytes
+	let mut i = 0;
+	while i < packet.data.len() {
+	    let c = *packet.data.get(i).unwrap();
+	    if c == '#' as u8 {
+		// if the character is a #, then the following char
+		// has low 7 bits <= 31 or == 127, or == '#'. The
+		// following char is also stored as ctl(c).
+
+		file_bytes.push(ctl(*packet.data.get(i+1).unwrap() as u8));
+		i += 2;
+	    } else {
+		file_bytes.push(*packet.data.get(i).unwrap() as u8);
+		i += 1;
+	    }
+	}
+
+	// send ACK for this packet
+	let d_ack_packet = make_generic_packet(&mut seq, 'Y');
+	match port.write(&d_ack_packet) {
+    	    Ok(_) => {},
+	    Err(e) => crate::helpers::error_handler(
+		format!("Error: failed to write \"Y\" packet for \"D\" packet: {}", e)),
+	}
+    }
+
+    // probably need some sleep here or something
+    
+    // read Z (EOF) packet from calculator
+    match read_packet(port) {
+	Ok(packet) => {
+	    if packet.ptype != 'Z' as u8 {
+		// TODO: "unexpected packet type" is a great error to throw.
+		crate::helpers::error_handler("Error: unexpected packet type after data packets".to_string());
+	    }
+	},
+	Err(e) => crate::helpers::error_handler(format!("Error: failed to read \"Z\" packet: {}", e)),
+    }
+
+    let z_ack_packet = make_generic_packet(&mut seq, 'Y');
+    match port.write(&z_ack_packet) {
+    	Ok(_) => {},
+	Err(e) => crate::helpers::error_handler(
+	    format!("Error: failed to write \"Y\" packet for \"Z\" packet: {}", e)),
+    }
+
+    // read B (EOT) packet from calculator
+    match read_packet(port) {
+	Ok(packet) => {
+	    if packet.ptype != 'B' as u8 {
+		crate::helpers::error_handler("Error: unexpected packet type after \"Z\" packet".to_string());
+	    }
+	},
+	Err(e) => crate::helpers::error_handler(format!("Error: failed to read \"B\" packet: {}", e)),
+    }
+
+    let b_ack_packet = make_generic_packet(&mut seq, 'Y');
+    match port.write(&b_ack_packet) {
+    	Ok(_) => {},
+	Err(e) => crate::helpers::error_handler(
+	    format!("Error: failed to write \"Y\" packet for \"B\" packet: {}", e)),
+    }
+
+    
+
+    match out.write_all(&file_bytes) {
+	Ok(_) => {},
+	Err(e) => panic!("Error: failed to write to output file: {:?}", e),
+    };
+    
 }

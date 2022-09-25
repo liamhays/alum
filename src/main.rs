@@ -37,7 +37,9 @@ struct Cli {
 
 
 // It should be noted that Kermit compatibility exists mainly for the
-// 48S series. 
+// 48S series.
+
+// TODO: long and short subcommand descriptions
 #[derive(Subcommand)]
 #[derive(Debug)]
 enum Commands {
@@ -61,7 +63,7 @@ enum Commands {
 	direct: bool,
     },
 
-    /*/// Get file from Kermit server
+    /// Get file from Kermit server
     Kget {
 	#[clap(parse(from_os_str))]
 	path: std::path::PathBuf,
@@ -69,9 +71,9 @@ enum Commands {
 	/// Overwrite pre-existing file on computer if necessary
 	#[clap(short, long, action, default_value_t = false)]
 	overwrite: bool,
-    },*/
+    },
 
-    /// Get file from XModem server
+    /// Get file from XModem server or ARCHIVE command
     Xget {
 	#[clap(parse(from_os_str))]
 	path: std::path::PathBuf,
@@ -154,6 +156,8 @@ fn get_serial_port(cli_port: Option<PathBuf>, cli_baud: Option<u32>) -> Box<dyn 
 fn main() {
     let cli = Cli::parse();
 
+    // TODO: in Kermit mode, increase serial timeout
+    
     // Dispatch operation
     match &cli.command {
 	Commands::Xsend { direct, path } => {
@@ -175,6 +179,7 @@ fn main() {
 			     "ignoring flag ", style("-f").green(),
 			     " (finish) used in XModem direct mode");
 		}
+		// TODO: why do we use different forms of path here versus later?
 		xmodem::send_file_normal(&path.to_path_buf(), &mut port);
 	    } else {
 		// send file to server
@@ -212,10 +217,11 @@ fn main() {
 	// probably will later, because it's the only easy way to get
 	// ASCII data.
 	
-	/*Commands::Kget { path, overwrite } => {
-	    //let mut port = get_serial_port(cli.port, cli.baud);
+	Commands::Kget { path, overwrite } => {
+	    let mut port = get_serial_port(cli.port, cli.baud);
+	    kermit::get_file(path, &mut port);
 	    println!("Kget, path = {:?}, overwrite = {:?}", path, overwrite);
-	},*/
+	},
 
 	Commands::Info { path } => {
 	    //println!("Info mode, path = {:?}", path);
