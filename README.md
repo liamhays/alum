@@ -12,7 +12,8 @@ because:
 - It is cross-platform, currently tested on Windows and Linux
 - It is programmed in Rust (compiles to an executable) and requires no
   external dependencies, except for one small package on Linux
-- Alum uses Rust implementations of XModem and Kermit
+- Alum uses Rust implementations of XModem and Kermit, without
+  deferring to external programs
   
 I am retiring my previous software HPex, a GUI tool that accomplished
 a similar task. HPex was written in Python 3 and wxPython, which meant
@@ -60,6 +61,7 @@ Alum uses a "subcommand" structure. The commands are:
 - `xsend`: send file with XModem
 - `xget`: get file with XModem
 - `ksend`: send file with Kermit
+- `kget`: get file with Kermit
 - `info`: calculate file size and HP checksum on file
 
 Each subcommand takes a file argument and optionally flags. Alum
@@ -88,8 +90,20 @@ In this example, Alum found the one physical serial port on the system
 and used it automatically.
 
 Sometimes, after a file has been transferred to the calculator, the
-rightmost "data transfer" annunciator will stay on. I don't know why
-this is and it appears to be harmless.
+rightmost "data transfer" annunciator will stay on while the XModem
+server is still running. I don't know why this happens, and it appears
+to be harmless.
+
+## Kermit transfers
+The `ksend` command sends files to a Kermit server or `RECV` command
+on the calculator. To use `RECV`, run the calculator command
+**before** you run Alum.
+
+The `kget` command receives files from either a `SEND` command or the
+`ARCHIVE` command, if it given an `:IO:<name>` argument. `kget` does
+**not** talk to a Kermit server, to maintain compatibility with
+`ARCHIVE`. To use `kget`, run Alum and then start the transfer on the
+calculator.
 
 ## Extra transfer features
 To finish or close any server after a transfer, pass the `-f` flag to
@@ -108,10 +122,12 @@ Alum also does not currently support receiving files over Kermit. I'm
 working on it.
 
 ## Future features
-- [ ] Kermit receive
-- [ ] XModem server and Kermit server file listing
-- [ ] 1K CRC direct XModem
+sorted by urgency:
+
 - [ ] HP 49 object info
+- [ ] 1K CRC direct XModem
+- [ ] XModem server and Kermit server file listing (maybe)
+
 
 ## XModem caveat
 XModem is an old standard, and is so simple as to be
@@ -121,7 +137,7 @@ received file. However, some files have necessary `0x00` bytes at
 their end, and sending these files via XModem causes the object to
 become corrupted. For example, one file that suffers from this is the
 tool [`FIXIT`](https://www.hpcalc.org/details/2416), by Joe Horn and
-Mika Heiskanen. **Conn4x suffers from this same issue, including with
+Mika Heiskanen. **Conn4x suffers from this issue as well, including with
 this particular file. It is a limitation of the XModem protocol. If
 you have sensitive files, or cannot get checksums to match, send them
 via Kermit.**

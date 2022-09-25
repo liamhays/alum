@@ -367,9 +367,6 @@ fn create_command_packet(data: Vec<u8>, cmd: char) -> Vec<u8> {
 // become correct.
 pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, direct: &bool,
 		overwrite: &bool, finish: &bool) -> PathBuf {
-    
-
-
     let final_path = match overwrite {
 	true => path.to_path_buf(),
 	false => crate::helpers::get_unique_path(path.to_path_buf()),
@@ -380,7 +377,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     let original_fname = path.file_name().unwrap().to_str().unwrap();
     let final_fname = final_path.file_name().unwrap().to_str().unwrap();
     
-    let mut file = File::create(final_path.clone()).unwrap();
+    let mut file = File::create(&final_path).unwrap();
 
     // hp_fname is the list of bytes we actually send to the calculator, with HP 48 byte conversion
     let mut hp_fname: Vec<u8> = Vec::new();
@@ -391,7 +388,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     }
     
     let pb = crate::helpers::get_spinner(
-	format!("Receiving {} as {} on {}...",
+	format!("Receiving {} as {} from {}...",
 		style(original_fname).yellow().bright(),
 		style(final_fname).yellow().bright(),
 		style(port.name().unwrap()).green().bright()));
@@ -517,7 +514,7 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, dire
     }
 
     pb.finish_with_message(
-	format!("Receiving {:?} on {}...{} Got {:?} {}.",
+	format!("Receiving {:?} from {}...{} Got {:?} {}.",
 		style(path.file_name().unwrap()).yellow().bright(),
 		style(port.name().unwrap()).green().bright(),
 		style("done!").green().bright(),

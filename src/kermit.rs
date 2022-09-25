@@ -22,6 +22,7 @@ use std::fs::File;
 use std::io::Write;
 
 use serialport;
+use console::style;
 use indicatif::ProgressBar;
 
 const SOH: u8 = 0x01;
@@ -68,6 +69,7 @@ fn tochar(c: u8) -> u8 {
     c + 32
 }
 
+// TODO: this panics if it is called on an invalid value
 fn unchar(c: u8) -> u8 {
     c - 32
 }
@@ -158,14 +160,14 @@ fn make_generic_packet(seq: &mut u32, ptype: char) -> Vec<u8> {
 // do with how we read the packet (3 bytes then rest of packet).
 fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacket, String> {
     // have to sleep, probably because the calculator is slow
-    std::thread::sleep(std::time::Duration::from_millis(400));
+    std::thread::sleep(std::time::Duration::from_millis(300));
     // it seems we have to read 3 bytes, then the rest of the packet
     let mut header: [u8; 3] = [0; 3];
     match port.read(header.as_mut_slice()) {
 	Ok(_) => {},
 	Err(e) => return Err("failed to read header of packet: ".to_owned() + &e.to_string()),
     }
-    println!("header is {:x?}", header);
+    //println!("header is {:x?}", header);
     if header[0] != SOH {
 	return Err("malformed Kermit packet (SOH missing)".to_owned());
     }
@@ -175,12 +177,14 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacke
     // this would be len - 1, but we want to also read the CR at the end of the packet.
     let mut rest_of_packet = vec![0 as u8; len as usize];
 
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    // could probably reduce this delay slightly
+    // this also seems to be needed only for getting files from the calc
+    std::thread::sleep(std::time::Duration::from_millis(50));
     match port.read(rest_of_packet.as_mut_slice()) {
 	Ok(_) => {},
 	Err(e) => return Err("failed to read packet data: ".to_owned() + &e.to_string()),
     }
-    println!("rest of packet is {:x?}", rest_of_packet);
+    //println!("rest of packet is {:x?}", rest_of_packet);
     // subtract 2 to drop 0x0d and check field, to isolate just data
     // portion and assemble KermitPacket struct.
     let data_field = rest_of_packet[1..(len as usize - 2)].to_vec();
@@ -201,7 +205,7 @@ fn read_packet(port: &mut Box<dyn serialport::SerialPort>) -> Result<KermitPacke
 	return Err("Error: checksum of received data does not match checksum in packet".to_owned());
     }
 
-    println!("packet is {:x?}", packet);
+    //println!("packet is {:x?}", packet);
 
     return Ok(packet);
 }
@@ -316,10 +320,12 @@ fn finish_server(port: &mut Box<dyn serialport::SerialPort>) {
 // TODO: this is pretty unreliable and doesn't work with x48 at full
 // speed. It has to do with the read_packet() function.
 
+// TODO: (more important) need to handle special characters in the filename
+
 // See the top of this file for what this function actually
 // does. There are a lot of match statements, but it's how I catch
 // serial port and protocol errors.
-pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, finish: bool) {
+pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, finish: &bool) {
     let mut seq = 0u32;
     
     let file_contents = crate::helpers::get_file_contents(path);
@@ -386,18 +392,28 @@ pub fn send_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, fin
     }
     bar.finish();
 
-    if finish {
+    if *finish {
 	finish_server(port);
     }
 }
 
 
+// TODO: indeterminate progress bar or something similar.
+pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>, overwrite: &bool) -> PathBuf {
+    let final_path = match overwrite {
+	true => path.to_path_buf(),
+	false => crate::helpers::get_unique_path(path.to_path_buf()),
+    };
+    let final_fname = final_path.file_name().unwrap().to_str().unwrap();
+    
+    let pb = crate::helpers::get_spinner(
+	format!("Receiving file as {} from {}...",
+		style(final_fname).yellow().bright(),
+		style(port.name().unwrap()).green().bright()));
 
-pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
-    println!("kermit::get_file");
     
     let mut seq = 0;
-    let mut out = File::create(path).unwrap();
+    let mut out = File::create(&final_path).unwrap();
 
     // read S packet, which initializes connection from the calculator
     match read_packet(port) {
@@ -438,6 +454,8 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
     }
 
     let mut file_bytes: Vec<u8> = Vec::new();
+    let mut packet_counter = 0;
+    
     loop {
 	let packet: KermitPacket = match read_packet(port) {
 	    Ok(packet) => {
@@ -446,10 +464,10 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 		    packet
 		} else if packet.ptype == 'Z' as u8 {
 		    // Z (end-of-file) is sent by the calc
-		    println!("got Z packet");
 		    break;
 		} else {
-		    crate::helpers::error_handler(format!("Error: unexpected packet type when waiting for \"D\" packet."));
+		    crate::helpers::error_handler(
+			format!("Error: unexpected packet type when waiting for \"D\" packet."));
 		    KermitPacket {data: Vec::new(), len: 0, ptype: 0u8, seq: 0}
 		}
 	    },
@@ -483,10 +501,10 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	    Err(e) => crate::helpers::error_handler(
 		format!("Error: failed to write \"Y\" packet for \"D\" packet: {}", e)),
 	}
+	packet_counter += 1;
     }
 
-    // probably need some sleep here or something
-    
+    std::thread::sleep(std::time::Duration::from_millis(300));
     // read Z (EOF) packet from calculator
     match read_packet(port) {
 	Ok(packet) => {
@@ -528,5 +546,19 @@ pub fn get_file(path: &PathBuf, port: &mut Box<dyn serialport::SerialPort>) {
 	Ok(_) => {},
 	Err(e) => panic!("Error: failed to write to output file: {:?}", e),
     };
-    
+
+    pb.finish_with_message(
+	format!("Receiving file as {:?} from {}...{} Got {:?} {}.",
+		style(final_fname).yellow().bright(),
+		style(port.name().unwrap()).green().bright(),
+		style("done!").green().bright(),
+		packet_counter,
+		match packet_counter {
+		    1 => "packet",
+		    _ => "packets",
+		}
+	)
+    );
+
+    return final_path;
 }

@@ -29,10 +29,6 @@ struct Cli {
     #[clap(value_parser = clap::value_parser!(u32).range(1..))]
     baud: Option<u32>,
 
-    /// Finish remote server after file transfer
-    #[clap(short, long, action, default_value_t = false)]
-    finish: bool,
-
 }
 
 
@@ -43,27 +39,31 @@ struct Cli {
 #[derive(Subcommand)]
 #[derive(Debug)]
 enum Commands {
-    /// Send file to Kermit server
+    /// Send file to Kermit server or RECV command
     Ksend {
 	#[clap(parse(from_os_str))]
 	path: std::path::PathBuf,
+
+	/// Finish Kermit server after file transfer
+	#[clap(short, long, action, default_value_t = false)]
+	finish: bool,
     },
-
-    // Ah! Because Subcommands are each extendable, we can add an
-    // option to communicate with a server to this.
-
-    // The amount of future-proofing here is insane.
-    /// Send file to XModem server
+    
+    /// Send file with XModem
     Xsend {
 	#[clap(parse(from_os_str))]
 	path: std::path::PathBuf,
 
-	/// Send to direct XRECV, not server (bypasses server operations and uses 128-byte XModem)
+	/// Send to direct XRECV, not XModem server
 	#[clap(short, long, action, default_value_t = false)]
 	direct: bool,
+
+	/// Finish XModem server after file transfer
+	#[clap(short, long, action, default_value_t = false)]
+	finish: bool,
     },
 
-    /// Get file from Kermit server
+    /// Get file from SEND or ARCHIVE command (not server!)
     Kget {
 	#[clap(parse(from_os_str))]
 	path: std::path::PathBuf,
@@ -73,7 +73,7 @@ enum Commands {
 	overwrite: bool,
     },
 
-    /// Get file from XModem server or ARCHIVE command
+    /// Get file with XModem
     Xget {
 	#[clap(parse(from_os_str))]
 	path: std::path::PathBuf,
@@ -82,9 +82,13 @@ enum Commands {
 	#[clap(short, long, action, default_value_t = false)]
 	overwrite: bool,
 
-	/// Get from direct XSEND, not server (bypasses server operations)
+	/// Get from direct XSEND, not XMODEM server
 	#[clap(short, long, action, default_value_t = false)]
 	direct: bool,
+
+	/// Finish XModem server after file transfer
+	#[clap(short, long, action, default_value_t = false)]
+	finish: bool,
     },
 
     /// Run HP object info check on `path` instead of transferring file
@@ -140,7 +144,7 @@ fn get_serial_port(cli_port: Option<PathBuf>, cli_baud: Option<u32>) -> Box<dyn 
     // This is not how I would normally write a match statement, but I
     // didn't want to deal with the return type in the Err arm.
     let port = serialport::new(final_port, final_baud)
-	.timeout(Duration::from_millis(1500))
+	.timeout(Duration::from_millis(3500))
 	.open();
     match port {
 	// e.description is a string,
@@ -160,7 +164,7 @@ fn main() {
     
     // Dispatch operation
     match &cli.command {
-	Commands::Xsend { direct, path } => {
+	Commands::Xsend { direct, path, finish } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    //println!("Xsend, direct = {:?}, path = {:?}", direct, path);
 	    // we actually use {:?} on the filename so that it displays in quotes
@@ -173,17 +177,17 @@ fn main() {
 		     style(port.name().unwrap()).green().bright());
 	    if *direct {
 		// send file directly to XRECV
-		if cli.finish {
+		if *finish {
 		    println!("{}: {}{}{}",
 			     style("warning").yellow().bright(),
 			     "ignoring flag ", style("-f").green(),
-			     " (finish) used in XModem direct mode");
+			     " (finish server) used in XModem direct mode.");
 		}
 		// TODO: why do we use different forms of path here versus later?
-		xmodem::send_file_normal(&path.to_path_buf(), &mut port);
+		xmodem::send_file_normal(path, &mut port);
 	    } else {
 		// send file to server
-		xmodem::send_file_conn4x(&path.to_path_buf(), &mut port, &cli.finish);
+		xmodem::send_file_conn4x(path, &mut port, finish);
 	    }
 	    println!("{}", style("Done!").green().bright());
 	    // I like the way this newline and indent looks.
@@ -191,11 +195,11 @@ fn main() {
 	    hp_object::crc_and_output(path);
 	},
 
-	Commands::Xget { direct, path, overwrite } => {
+	Commands::Xget { direct, path, overwrite, finish } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    //println!("Xget, path = {:?}, overwrite = {:?}", path, overwrite);
 	    // get the actual path that the transfer wrote to
-	    let final_path = xmodem::get_file(path, &mut port, direct, overwrite, &cli.finish);
+	    let final_path = xmodem::get_file(path, &mut port, direct, overwrite, finish);
 	    // "of" is not the right preposition to use here, but it
 	    // makes it clear that we're talking about the file after
 	    // processing, stored on the computer's drive.
@@ -203,28 +207,24 @@ fn main() {
 	    hp_object::crc_and_output(&final_path);
 	},
 
-	Commands::Ksend { path } => {
+	Commands::Ksend { path, finish } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
 	    println!("Sending {:?} via Kermit on {}...",
 		     style(path.file_name().unwrap()).yellow().bright(),
 		     style(port.name().unwrap()).green().bright());
-	    //println!("Ksend, path = {:?}, finish = {:?}", path, cli.finish);
-	    kermit::send_file(path, &mut port, cli.finish);
+	    
+	    kermit::send_file(path, &mut port, finish);
 	    print!("File info:\n  ");
 	    hp_object::crc_and_output(path);
 	},
-	// I am not implementing kermit receive at the moment, but I
-	// probably will later, because it's the only easy way to get
-	// ASCII data.
-	
 	Commands::Kget { path, overwrite } => {
 	    let mut port = get_serial_port(cli.port, cli.baud);
-	    kermit::get_file(path, &mut port);
-	    println!("Kget, path = {:?}, overwrite = {:?}", path, overwrite);
+	    let final_path = kermit::get_file(path, &mut port, overwrite);
+	    print!("Info of received file:\n  ");
+	    hp_object::crc_and_output(&final_path);
 	},
 
 	Commands::Info { path } => {
-	    //println!("Info mode, path = {:?}", path);
 	    hp_object::crc_and_output(path);
 	},
     }
