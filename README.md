@@ -102,8 +102,9 @@ on the calculator. To use `RECV`, run the calculator command
 The `kget` command receives files from either a `SEND` command or the
 `ARCHIVE` command, if it given an `:IO:<name>` argument. `kget` does
 **not** talk to a Kermit server, to maintain compatibility with
-`ARCHIVE`. To use `kget`, run Alum and then start the transfer on the
-calculator.
+`ARCHIVE`. To use `kget`, run Alum (`alum kget ARCH`, the filename is
+used as the output name on the computer) and then start the transfer
+on the calculator.
 
 ## Extra transfer features
 To finish or close any server after a transfer, pass the `-f` flag to

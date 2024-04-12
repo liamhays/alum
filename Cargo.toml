@@ -1,13 +1,13 @@
 [package]
 name = "alum"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "3.0", features = ["derive"] }
-serialport = "4.2.0"
-indicatif = "0.16.2"
+clap = { version = "4.5", features = ["derive"] }
+serialport = "4.3"
+indicatif = "0.17"
 # works alongside the indicatif package
-console = "0.15.0"
+console = "0.15"

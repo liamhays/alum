@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -34,6 +35,7 @@ pub fn get_progress_bar(len: u64) -> ProgressBar {
 		 // wide_bar means expand to fill space, :2 means
 		 // surround with 2 spaces (I think).
 		 .template(format!("{{wide_bar}} {{pos:>2}}/{{len:2}} packets ({{percent}}%)").as_str())
+		 .unwrap()
 		 .progress_chars("##-"));
     return pb;
 }
@@ -44,6 +46,7 @@ pub fn get_spinner(label: std::string::String) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_bar()
 	    .template("{spinner:} {msg}")
+	    .unwrap()
 	    // I like this spinner. It's reminiscent of systemd and very readable.
             .tick_strings(&[
 		"[=     ]",
@@ -66,7 +69,7 @@ pub fn get_spinner(label: std::string::String) -> ProgressBar {
     );
     	
     pb.set_message(label);
-    pb.enable_steady_tick(120); // in ms
+    pb.enable_steady_tick(Duration::from_millis(120)); // in ms
     /*
 
     thread::sleep(Duration::from_secs(1));

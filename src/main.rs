@@ -11,8 +11,8 @@ use console::style;
 use serialport;
 
 /// Transfer file to and from calculator.
-#[derive(Parser)]
-#[derive(Debug)]
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
 struct Cli {
     /// Operation to execute on PATH
     #[clap(subcommand)]
@@ -36,12 +36,11 @@ struct Cli {
 // 48S series.
 
 // TODO: long and short subcommand descriptions
-#[derive(Subcommand)]
-#[derive(Debug)]
+#[derive(Subcommand, Debug)]
 enum Commands {
     /// Send file to Kermit server or RECV command
     Ksend {
-	#[clap(parse(from_os_str))]
+	#[arg(default_value = "")]
 	path: std::path::PathBuf,
 
 	/// Finish Kermit server after file transfer
@@ -51,7 +50,7 @@ enum Commands {
     
     /// Send file with XModem
     Xsend {
-	#[clap(parse(from_os_str))]
+	#[arg(default_value = "")]
 	path: std::path::PathBuf,
 
 	/// Send to direct XRECV, not XModem server
@@ -65,7 +64,7 @@ enum Commands {
 
     /// Get file from SEND or ARCHIVE command (not server!)
     Kget {
-	#[clap(parse(from_os_str))]
+	#[arg(default_value = "")]
 	path: std::path::PathBuf,
 
 	/// Overwrite pre-existing file on computer if necessary
@@ -75,7 +74,7 @@ enum Commands {
 
     /// Get file with XModem
     Xget {
-	#[clap(parse(from_os_str))]
+	#[arg(default_value = "")]
 	path: std::path::PathBuf,
 
 	/// Overwrite pre-existing file on computer if necessary
@@ -93,7 +92,7 @@ enum Commands {
 
     /// Run HP object info check on `path` instead of transferring file
     Info {
-	#[clap(parse(from_os_str))]
+	#[arg(default_value = "")]
 	path: PathBuf,
     },
 }
